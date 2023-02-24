@@ -358,13 +358,27 @@ static unsigned  get_ts_id(struct i2c_device_st* const  dev, const unsigned num)
 	low=high=0xFF;
 	if(( r = readReg(dev, 0xce + (num << 1), &high ) ))  goto err1;
 	if(( r = readReg(dev, 0xcf + (num << 1), &low ) ))  goto err1;
-	if(high==0xFF&&low!=0xFF) // retry
+	if(high==0xFF&&low!=0xFF) //# retry
 		if(( r = readReg(dev, 0xce + (num << 1), &high ) ))  goto err1;
 	return (unsigned) high<<8 | (unsigned) low;
 err1:
 	warn_info(r,"failed");
 err0:
 	return 0;
+}
+
+static unsigned  select_ts_id(struct i2c_device_st* const  dev, const unsigned tsSel)
+{
+	//# direct indexed
+	unsigned num,tsid = get_ts_id(dev,tsSel) ;
+	if(tsid!=0&&tsid!=0xFFFF&&(tsid&7)==tsSel) return tsid ;
+	//# binary search
+	for(num=0;num<=7;num++) {
+		if(num==tsSel) continue ;
+		tsid = get_ts_id(dev,num) ;
+		if(tsid!=0&&tsid!=0xFFFF&&(tsid&7)==tsSel) return tsid ;
+	}
+	return 0 ;
 }
 
 int tc90522_setTSID(void * const state, const unsigned devnum, const unsigned ts_id)
@@ -400,7 +414,7 @@ int tc90522_selectStream(void * const state, const unsigned devnum, const unsign
 	if(devnum & 1) {  //# sate
 		//# select TS ID
 		if(8 > tsSel) {
-			ts_id = get_ts_id(dev, tsSel);
+			ts_id = select_ts_id(dev, tsSel);
 			if(0 == ts_id || 0xFFFF == ts_id) {  //# empty
 				//warn_msg(0,"TS_ID(%u)= %04X invalid!", tsSel, ts_id);
 				ret = 1;

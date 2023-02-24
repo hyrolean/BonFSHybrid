@@ -4,3 +4,5 @@
 #include <windows.h>
 
 #include "../message.h"
+
+#include "../twindbg.h"

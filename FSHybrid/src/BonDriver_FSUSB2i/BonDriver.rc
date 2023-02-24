@@ -2,8 +2,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 0,1,5,5
- PRODUCTVERSION 0,1,5,5
+ FILEVERSION 0,1,4,27
+ PRODUCTVERSION 0,1,4,27
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "trinity19683"
             VALUE "FileDescription", "BonDriver for FSUSB2i"
-            VALUE "FileVersion", "0,1,5,5"
+            VALUE "FileVersion", "0,1,4,27"
             VALUE "InternalName", "BonDriver_FSUSB2i.dll"
             VALUE "LegalCopyright", "trinity19683 2015-2016"
             VALUE "OriginalFilename", "BonDriver_FSUSB2i.dll"
             VALUE "ProductName", "BonDriver_FSUSB2i"
-            VALUE "ProductVersion", "0,1,5,5"
+            VALUE "ProductVersion", "0,1,4,27"
         END
     END
     BLOCK "VarFileInfo"

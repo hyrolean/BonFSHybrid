@@ -4,7 +4,16 @@
   2016-02-12
 */
 
+#ifdef LEGACY_STDINT
+
+#include "stdint_.h"
+
+#else
+
 #include <stdint.h>
+
+#endif
+
 #include <errno.h>
 #include <string.h>
 #include <malloc.h>
@@ -340,22 +349,41 @@ err1:
 static unsigned  get_ts_id(struct i2c_device_st* const  dev, const unsigned num)
 {
 	int r;
-	uint8_t utmp;
-	unsigned uval;
+	uint8_t utmp, high, low;
 	//if(num >= 8)  return 0;
 	if(( r = readReg(dev, 0xc3, &utmp ) ))  goto err1;
 	if(utmp & 0x10) {  //# TMCC error
 		goto err0;
 	}
-	if(( r = readReg(dev, 0xce + (num * 2), &utmp ) ))  goto err1;
-	uval = utmp << 8;
-	if(( r = readReg(dev, 0xcf + (num * 2), &utmp ) ))  goto err1;
-	uval |= utmp & 0xFF;
-	return uval;
+	low=high=0xFF;
+	if(( r = readReg(dev, 0xce + (num << 1), &high ) ))  goto err1;
+	if(( r = readReg(dev, 0xcf + (num << 1), &low ) ))  goto err1;
+	if(high==0xFF&&low!=0xFF) // retry
+		if(( r = readReg(dev, 0xce + (num << 1), &high ) ))  goto err1;
+	return (unsigned) high<<8 | (unsigned) low;
 err1:
 	warn_info(r,"failed");
 err0:
 	return 0;
+}
+
+int tc90522_setTSID(void * const state, const unsigned devnum, const unsigned ts_id)
+{
+	int ret;
+	struct state_st* const s = state;
+	struct i2c_device_st* const  dev = &(s->i2c_dev[devnum]);
+
+	if(devnum & 1) { // sate
+		if(( ret = writeReg(dev, 0x8f, (ts_id >> 8) & 0xFF, 0) ))  goto err1;
+		if(( ret = writeReg(dev, 0x90, ts_id & 0xFF, 0) ))  goto err1;
+	}else {  // terra
+		//# select ignore layer (4:A, 2:B, 1:C)  e.g.(A+B= OneSeg + FullSeg  or  A= FullSeg)
+		if(( ret = writeReg(dev, 0x71, ts_id & 0x07, 0x07) ))  goto err1;
+	}
+	return 0;
+err1:
+	warn_info(ret,"failed");
+	return ret;
 }
 
 int tc90522_selectStream(void * const state, const unsigned devnum, const unsigned tsSel)
@@ -363,13 +391,13 @@ int tc90522_selectStream(void * const state, const unsigned devnum, const unsign
 	int ret;
 	struct state_st* const s = state;
 	struct i2c_device_st* const  dev = &(s->i2c_dev[devnum]);
+	unsigned ts_id;
 
 	if(! dev->addr) {
 		warn_info(0,"invalid device %u", devnum);
 		return -2;
 	}
 	if(devnum & 1) {  //# sate
-		unsigned ts_id;
 		//# select TS ID
 		if(8 > tsSel) {
 			ts_id = get_ts_id(dev, tsSel);
@@ -381,14 +409,10 @@ int tc90522_selectStream(void * const state, const unsigned devnum, const unsign
 		}else{
 			ts_id = tsSel;
 		}
-		if(( ret = writeReg(dev, 0x8f, (ts_id >> 8) & 0xFF, 0) ))  goto err1;
-		if(( ret = writeReg(dev, 0x90, ts_id & 0xFF, 0) ))  goto err1;
-
 	}else{  //# terra
-		//# select ignore layer (4:A, 2:B, 1:C)  e.g.(A+B= OneSeg + FullSeg  or  A= FullSeg)
-		if(( ret = writeReg(dev, 0x71, tsSel & 0x07, 0x07) ))  goto err1;
-	}
-
+		ts_id = tsSel ;
+ 	}
+	if(( ret = tc90522_setTSID(state, devnum, ts_id) )) goto err1;
 	return 0;
 err1:
 	warn_info(ret,"failed");

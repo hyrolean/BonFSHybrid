@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "em2874.h"
-#include "../twindbg.h"
 #include <setupapi.h>
 #include <strsafe.h>
 
@@ -16,7 +15,7 @@ inline uint8_t ICC_checkSum (const uint8_t* data, int len)
 	return sum;
 }
 
-inline void miliWait( int s )
+inline void milliWait( int s )
 {
 	::Sleep(s);
 }
@@ -29,6 +28,10 @@ EM2874Device::EM2874Device ()
 , hTsEvent(NULL), TsBuffSize(NULL)
 #endif
 {
+#ifdef EM2874_TS
+	ZeroMemory(&IoContext,sizeof(IoContext));
+	ZeroMemory(&WBack,sizeof(WBack)) ;
+#endif
 }
 
 EM2874Device::EM2874Device(HANDLE hDev)
@@ -37,6 +40,10 @@ EM2874Device::EM2874Device(HANDLE hDev)
 , hTsEvent(NULL), TsBuffSize(NULL)
 #endif
 {
+#ifdef EM2874_TS
+	ZeroMemory(&IoContext,sizeof(IoContext));
+	ZeroMemory(&WBack,sizeof(WBack)) ;
+#endif
 }
 
 EM2874Device::~EM2874Device ()
@@ -66,7 +73,7 @@ EM2874Device* EM2874Device::AllocDevice(int &idx)
 {
 	DWORD dwRet;
 	ULONG length;
-	
+
 	HANDLE hDev = INVALID_HANDLE_VALUE;
 
 	// デバイス情報セットのハンドル取得
@@ -76,7 +83,10 @@ EM2874Device* EM2874Device::AllocDevice(int &idx)
 	SP_DEVICE_INTERFACE_DATA interfaceData;
 	interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
 
-	for(; idx < 20; idx++ ) {
+	const int idmax = (idx<0) ? 20 : idx+1 ;
+	if(idx<0) idx=0 ;
+
+	for(; idx < idmax; idx++ ) {
 		// デバイスインタフェースを列挙
 		if( FALSE == SetupDiEnumDeviceInterfaces(deviceInfo, NULL, (GUID *)&GUID_WINUSB_DRIVER, idx, &interfaceData) ) {
 			dwRet = ::GetLastError();
@@ -169,13 +179,13 @@ bool EM2874Device::initDevice2 ()
 	uint8_t val;
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, ~0xc1U & val );
-	
-	miliWait(70);
+
+	milliWait(70);
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, 0x40U | val );
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, 0x7eU | val );
-	miliWait(3);
+	milliWait(3);
 	::WinUsb_SetCurrentAlternateSetting( usbHandle, 1 );
 
 	return true;
@@ -284,7 +294,7 @@ bool EM2874Device::resetICC_2 ()
 
 	DBG_INFO ( "ICC ready\n" );
 	readICC( &rlen, rbuff );
-	miliWait(1);
+	milliWait(1);
 
 	WINUSB_SETUP_PACKET spkt;
 	::ZeroMemory ( &spkt, sizeof(spkt) );
@@ -304,7 +314,7 @@ bool EM2874Device::resetICC_2 ()
 	writeReg( EM2874_REG_CAS_MODE2, 0);
 	writeReg( EM2874_REG_CAS_STATUS, 0x80 );
 
-	miliWait(100);
+	milliWait(100);
 	writeReg( EM2874_REG_CAS_DATALEN, 5 );
 	if(waitICC() < 0) return false;
 
@@ -368,7 +378,7 @@ bool EM2874Device::writeICC ( const size_t size, const void *data )
 	readReg( EM2874_REG_CAS_STATUS, &val );
 	//DBG_INFO("Wr r70 %02X\n",val);
 	writeReg( EM2874_REG_CAS_DATALEN, size + 4 );
-	miliWait(1);
+	milliWait(1);
 	return true;
 }
 
@@ -407,7 +417,7 @@ int EM2874Device::waitICC ()
 	uint8_t val;
 	int i;
 	for(i = 0; i < 40; i++) {
-		miliWait(8);
+		milliWait(8);
 		if(!readReg(EM2874_REG_CAS_STATUS, &val))
 			continue;
 		if( val == 5 ) {
@@ -459,7 +469,12 @@ int EM2874Device::getDeviceID()
 
 #ifdef EM2874_TS
 
-void EM2874Device::SetBuffer(void *pBuf)
+bool EM2874Device::WriteBackEnabled()
+{
+  return WBack.begin_func && WBack.finish_func ;
+}
+
+void EM2874Device::SetBuffer(void *pBuf, const struct write_back_t * const pWBack)
 {
 	TsBuffSize = (int32_t*)pBuf;
 	if(pBuf) {
@@ -467,12 +482,16 @@ void EM2874Device::SetBuffer(void *pBuf)
 
 		TsBuffSize[RINGBUFF_SIZE] = -2;
 		TsBuffSize[0x3ff] = -USBBULK_XFERSIZE;
+	}else TsBuff = NULL ;
+	ZeroMemory(&WBack,sizeof(WBack)) ;
+	if(pWBack) {
+	  CopyMemory(&WBack,pWBack,sizeof(WBack)) ;
 	}
 }
 
 bool EM2874Device::TransferStart()
 {
-	if(TsBuffSize == NULL)	return false;
+	if(TsBuffSize == NULL&&!WriteBackEnabled())	return false;
 	if(hTsEvent)	return true;
 
 	if( readReg(0x0B) & 0x2 ) {
@@ -525,16 +544,20 @@ int EM2874Device::DispatchTSRead()
 {
 	int nRet;
 	int cnt;
-	for(cnt = 0; ; cnt++) {
+	for(cnt = 0; cnt<NUM_IOHANDLE ; cnt++) {
 		nRet = GetOverlappedResult();
 		if(nRet == -1) {
 			// TS転送 待ち
 			break;
 		}else if(nRet >= 0) {
 			// TS転送完了 次の転送を要求
-			BeginAsyncRead();
-			if(OverlappedIoIndex < (NUM_IOHANDLE-1)) OverlappedIoIndex++;
-			else OverlappedIoIndex = 0;
+			if(BeginAsyncRead()) {
+				if(OverlappedIoIndex < (NUM_IOHANDLE-1)) OverlappedIoIndex++;
+				else OverlappedIoIndex = 0;
+			}else {
+				// バッファ不足
+				break ;
+			}
 		}else{
 			// TS転送 終了
 			return -1;
@@ -544,18 +567,26 @@ int EM2874Device::DispatchTSRead()
 	return cnt;
 }
 
-int EM2874Device::BeginAsyncRead()
+bool EM2874Device::BeginAsyncRead()
 {
-	DWORD dRet = TsBuffIndex;
-	TsBuffIndex = (dRet < (RINGBUFF_SIZE-1)) ? dRet + 1 : 0;
-
-	TsBuffSize[dRet] = -1;
-	IoContext[OverlappedIoIndex].index = dRet;
+	DWORD dRet ;
 
 	::ZeroMemory(&IoContext[OverlappedIoIndex].ol, sizeof(OVERLAPPED));
 	IoContext[OverlappedIoIndex].ol.hEvent = hTsEvent;
 
-	BOOL bRet = ::WinUsb_ReadPipe ( usbHandle, EM2874_EP_TS1, TsBuff + dRet*USBBULK_XFERSIZE, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol );
+	BOOL bRet ;
+	if(WriteBackEnabled()) {
+	    IoContext[OverlappedIoIndex].index = OverlappedIoIndex ;
+		void *buffer = WBack.begin_func(OverlappedIoIndex, USBBULK_XFERSIZE, WBack.arg) ;
+		if(!buffer) return false ;
+		bRet = ::WinUsb_ReadPipe ( usbHandle, EM2874_EP_TS1, (BYTE*)buffer, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol );
+	}else if(TsBuff) {
+		dRet = TsBuffIndex ;
+		TsBuffIndex = (dRet < (RINGBUFF_SIZE-1)) ? dRet + 1 : 0;
+		TsBuffSize[dRet] = -1;
+		IoContext[OverlappedIoIndex].index = dRet;
+		bRet = ::WinUsb_ReadPipe ( usbHandle, EM2874_EP_TS1, TsBuff + dRet*USBBULK_XFERSIZE, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol );
+	}else return false ;
 #if 0
 	dRet = ::GetLastError();
 	if( bRet == FALSE && dRet != ERROR_IO_PENDING ) DBG_INFO ("ReadP=%u ",dRet);
@@ -567,7 +598,7 @@ int EM2874Device::BeginAsyncRead()
 		// NOWAITで完了
 		::SetEvent(hTsEvent);
 	}
-	return 0;
+	return true;
 }
 
 int EM2874Device::GetOverlappedResult()
@@ -589,13 +620,21 @@ int EM2874Device::GetOverlappedResult()
 				break;
 		}
 	}
-	if(TsBuffSize == NULL) return -2;
-	const unsigned idx = IoContext[OverlappedIoIndex].index;
-	TsBuffSize[idx] = bytesRead;
+	if(WriteBackEnabled()) {
+		WBack.finish_func(OverlappedIoIndex,bytesRead,WBack.arg) ;
+	}else {
+		if(TsBuffSize == NULL) return -2;
+		const unsigned idx = IoContext[OverlappedIoIndex].index;
+		TsBuffSize[idx] = bytesRead;
+	}
+
 	return bytesRead;
 }
 
 HANDLE EM2874Device::GetHandle()
 { return hTsEvent; }
+
+int EM2874Device::GetTsBuffIndex()
+{ return TsBuffIndex; }
 
 #endif

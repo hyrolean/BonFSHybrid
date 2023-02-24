@@ -1,5 +1,7 @@
 #include "stdafx.h"
-#include "BonTuner.h"
+#include "BonTuner_FSUSB2i.h"
+
+using namespace FSUSB2i;
 
 BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved )
 {
@@ -13,3 +15,9 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 	}
 	return TRUE;
 }
+
+#pragma warning( disable : 4273 )
+extern "C" __declspec(dllexport) IBonDriver * CreateBonDriver()
+{return (CBonTuner::m_pThis)?CBonTuner::m_pThis:((IBonDriver*) new CBonTuner);}
+#pragma warning( default : 4273 )
+

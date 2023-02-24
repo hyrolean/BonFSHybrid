@@ -14,6 +14,7 @@
 #include "em287x_usb.h"
 #include "em287x_priv.h"
 #include "message.h"
+#include "tsbuff.h"
 
 #define ARRAY_SIZE(x)  (sizeof(x)/(sizeof(x[0])))
 
@@ -287,8 +288,10 @@ int em287x_create(em287x_state* const  state, struct usb_endpoint_st * const pus
 		pusbep->xfer_size = 188 * 5;
 	}else{
 		//# set BULK transfer size (unit: packet)
-		if(( ret = writeReg(st, 0x5d, 245 - 1 ) ))  { warn_info(ret,"failed"); return -8; }
-		pusbep->xfer_size = 188 * 245;
+		int n = TS_PacketSize/188 ;
+        if(n>256) n=256 ; else if(n<=0) n=1 ;
+        if(( ret = writeReg(st, 0x5d, (uint8_t)(n - 1) ) ))  { warn_info(ret,"failed"); return -8; }
+		pusbep->xfer_size = n * 188UL ; //188 * 245;
 	}
 
 	dmsg(" em287x init done!");

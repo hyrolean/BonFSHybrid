@@ -4,7 +4,11 @@
   2015-12-09
 */
 #pragma once
+#ifdef LEGACY_STDINT
+#include "stdint_.h"
+#else
 #include <stdint.h>
+#endif
 #include "types_u.h"
 
 typedef void* it9175_state;

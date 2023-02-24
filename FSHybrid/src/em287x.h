@@ -4,7 +4,16 @@
   2016-01-18
 */
 #pragma once
+#ifdef LEGACY_STDINT
+
+#include "stdint_.h"
+
+#else
+
 #include <stdint.h>
+
+#endif
+
 #include "types_u.h"
 
 typedef void* em287x_state;

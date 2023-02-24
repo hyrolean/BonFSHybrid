@@ -31,10 +31,11 @@ typedef signed int		int32_t;
 #define EM2874_TS
 
 #ifdef EM2874_TS
-#define USBBULK_XFERSIZE	(0xBC00)
-#define RINGBUFF_SIZE	60
-#define NUM_IOHANDLE	16
+    #define USBBULK_XFERSIZE	(0xBC00)
+    #define RINGBUFF_SIZE	48
+    #define NUM_IOHANDLE	36
 #endif
+
 
 typedef struct _TSIO_CONTEXT {
 
@@ -45,17 +46,27 @@ typedef struct _TSIO_CONTEXT {
 
 class EM2874Device
 {
+#ifdef EM2874_TS
+public:
+	typedef void *(*write_back_begin_func_t)(int id, size_t max_size, void *arg) ;
+	typedef void (*write_back_finish_func_t)(int id, size_t wrote_size, void *arg) ;
+	struct write_back_t {
+		write_back_begin_func_t begin_func;
+		write_back_finish_func_t finish_func;
+		void *arg;
+	};
+#endif
 private:
 	EM2874Device ();
 	bool resetICC_1 ();
 	bool resetICC_2 ();
-	
+
 	HANDLE dev;
 	WINUSB_INTERFACE_HANDLE usbHandle;
 	uint8_t cardPCB;
 
 #ifdef EM2874_TS
-	int BeginAsyncRead();
+	bool BeginAsyncRead();
 	int GetOverlappedResult();
 
 	uint8_t *TsBuff;
@@ -64,6 +75,7 @@ private:
 	int OverlappedIoIndex;
 	HANDLE hTsEvent;
 	TSIO_CONTEXT IoContext[NUM_IOHANDLE];
+    write_back_t WBack ;
 	DWORD dwtLastRead;
 #endif
 
@@ -93,12 +105,14 @@ public:
 	static unsigned UserSettings;
 
 #ifdef EM2874_TS
-	void SetBuffer(void *pBuf);
+	bool WriteBackEnabled() ;
+    void SetBuffer(void *pBuf, const struct write_back_t * const pWBack=NULL);
 	bool TransferStart();
 	void TransferStop();
 	void TransferPause();
 	void TransferResume();
 	int DispatchTSRead();
 	HANDLE GetHandle();
+    int GetTsBuffIndex();
 #endif
 };

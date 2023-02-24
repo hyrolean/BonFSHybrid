@@ -1,14 +1,28 @@
 
 #include "stdafx.h"
-#include "BonTuner.h"
-#include "../twindbg.h"
+#include "BonTuner_FSUSB2N.h"
 
-#pragma warning( disable : 4273 )
-extern "C" __declspec(dllexport) IBonDriver * CreateBonDriver()
-{
-	return (CBonTuner::m_pThis)? CBonTuner::m_pThis : ((IBonDriver *) new CBonTuner);
-}
-#pragma warning( default : 4273 )
+using namespace std ;
+
+namespace FSUSB2N {
+
+// 有効にするとtri.dw.land.toさん直伝のキャッシュ方式に変更
+BOOL TSCACHING_LEGACY = FALSE ;
+// キャッシュを整合化するかどうか（安定するが多少負荷がかかる）
+BOOL TSCACHING_DEFRAGMENT = FALSE ;
+// キャッシュを整合化する場合のパケットサイズ
+DWORD TSCACHING_DEFRAGSIZE = 128*1024 ; // 128K(Spinelに最適)
+
+DWORD ASYNCTS_QUEUENUM    = 66  ; // Default 3M (47K*66) bytes
+DWORD ASYNCTS_QUEUEMAX    = 660 ; // Maximum growth 30M (47K*660) bytes
+DWORD ASYNCTS_EMPTYBORDER = 22  ; // Empty border at least 1M (47K*22) bytes
+DWORD ASYNCTS_EMPTYLIMIT  = 11  ; // Empty limit at least 0.5M (47K*11) bytes
+#define TSWRITEBACK         1
+#define TSDATASIZE          USBBULK_XFERSIZE // = 64K bytes
+#define TSTHREADWAIT        1000
+#define TSALLOCWAITING		false
+#define TSALLOCMODERATE		true
+#define SUSPENDTIMEOUT      5000
 
 // 静的メンバ初期化
 CBonTuner * CBonTuner::m_pThis = NULL;
@@ -18,9 +32,7 @@ const TCHAR *g_RegKey = TEXT("Software\\tri.dw.land.to\\FSUSB2N");
 
 CBonTuner::CBonTuner()
 : m_dwCurSpace(0) , m_dwCurChannel(0) , usbDev(NULL) , pDev(NULL) , m_TsBuffSize(NULL) , m_ChannelList(NULL)
-#ifndef NO_TSTHREAD
-, m_hThread(NULL)
-#endif
+, m_hThread(NULL) , m_evThreadSuspend(NULL), m_evThreadResume(NULL), m_cntThreadSuspend(0), m_fifo(NULL)
 {
 	m_pThis = this;
 	this->LoadData();
@@ -35,12 +47,78 @@ CBonTuner::~CBonTuner()
 	m_pThis = NULL;
 }
 
-inline void WaitSleep (const DWORD dwStart, const DWORD dwTime)
+void CBonTuner::LoadUserChannels()
 {
-	DWORD dwLeft = dwStart + dwTime - ::GetTickCount();
-	if(dwLeft < 60000U)
-		::Sleep(dwLeft);
+  string chFName = file_path_of(ModuleFileName()) + file_prefix_of(ModuleFileName()) + ".ch.txt" ;
+
+  m_UserChannels.clear() ;
+  m_UserSpaceIndices.clear() ;
+
+  FILE *st=NULL ;
+  fopen_s(&st,chFName.c_str(),"rt") ;
+  if(!st) return ;
+  char s[512] ;
+
+  std::wstring space_name=L"" ;
+  while(!feof(st)) {
+	s[0]='\0' ;
+	fgets(s,512,st) ;
+	string strLine = trim(string(s)) ;
+	if(strLine.empty()) continue ;
+	wstring wstrLine = mbcs2wcs(strLine) ;
+	int t=0 ;
+	vector<wstring> params ;
+	split(params,wstrLine,L';') ;
+	wstrLine = params[0] ; params.clear() ;
+	split(params,wstrLine,L',') ;
+	if(params.size()>=2&&!params[0].empty()) {
+	  int Channel = 0 ;
+	  float MegaHz = 0.f ;
+	  wstring &space = params[0] ;
+	  wstring name = params.size()>=3 ? params[2] : L"" ;
+      wstring subname = params[1] ;
+	  if( params[1].length()>3&&
+		  params[1].substr(params[1].length()-3)==L"MHz" ) {
+		swscanf_s(params[1].c_str(),L"%fMHz",&MegaHz) ;
+	  }else if(swscanf_s(params[1].c_str(),L"C%d",&Channel)==1) {
+	    subname=L"C"+itows(Channel)+L"ch" ; Channel+=100 ;
+	  }else {
+		if(swscanf_s(params[1].c_str(),L"%d",&Channel)==1)
+          subname=itows(Channel)+L"ch" ;
+	  }
+	  if(name==L"")
+        name = subname ;
+      if(Channel!=0||MegaHz!=0.f) {
+		if(space_name!=space) {
+		  m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		  space_name=space ;
+		}
+		m_UserChannels.push_back(
+		  CHANNEL(space,Channel,name,MegaHz)) ;
+	  }
+	}
+  }
+
+  fclose(st) ;
+
 }
+
+int CBonTuner::UserDecidedDeviceIdx()
+{
+	int idx=0 ;
+	if(sscanf_s( upper_case(file_prefix_of(ModuleFileName())).c_str() , "BONDRIVER_FSUSB2N_DEV%d", &idx )==1)
+	  return idx ;
+
+	return -1 ;
+}
+
+string CBonTuner::ModuleFileName()
+{
+	char path[_MAX_PATH] ;
+	GetModuleFileNameA( m_hModule, path, _MAX_PATH ) ;
+	return path ;
+}
+
 
 const BOOL CBonTuner::OpenTuner()
 {
@@ -50,7 +128,7 @@ const BOOL CBonTuner::OpenTuner()
 
 	try{
 		// AllocTuner
-		for(int idx = 0;;)
+		for(int idx = UserDecidedDeviceIdx();;)
 		{
 			EM2874Device* pDevTmp = EM2874Device::AllocDevice(idx);
 			if(pDevTmp == NULL) {
@@ -64,7 +142,7 @@ const BOOL CBonTuner::OpenTuner()
 		// Device初期化
 		usbDev->initDevice2();
 
-		DWORD dwTime = ::GetTickCount();
+		DWORD dwStart = PastSleep();
 		::Sleep(80);
 		if(usbDev->getDeviceID() == 2) {
 			pDev = new Ktv2Device(usbDev);
@@ -72,34 +150,72 @@ const BOOL CBonTuner::OpenTuner()
 			pDev = new Ktv1Device(usbDev);
 		}
 
-		WaitSleep(dwTime, 160);
+		PastSleep(160,dwStart);
 		pDev->InitTuner();
 
-		WaitSleep(dwTime, 180);
+		PastSleep(180,dwStart);
 		pDev->InitDeMod();
 		pDev->ResetDeMod();
 
-		WaitSleep(dwTime, 500);
-		//
-		m_TsBuffSize = (int*)VirtualAlloc( NULL, RINGBUFF_SIZE*USBBULK_XFERSIZE + 0x1000, MEM_COMMIT, PAGE_READWRITE );
-		if(m_TsBuffSize == NULL)	throw (const DWORD)__LINE__;
-		m_pTsBuff = (BYTE*)(m_TsBuffSize + 0x400);
-		m_indexTsBuff = 0;
+		PastSleep(500,dwStart);
 
-		usbDev->SetBuffer( (void*)m_TsBuffSize );
-		usbDev->TransferStart();
-#ifndef NO_TSTHREAD
-		m_hThread = (HANDLE)_beginthreadex( NULL, 0, TsThread, (PVOID)this, 0, NULL );
-		if(m_hThread == INVALID_HANDLE_VALUE) {
-			m_hThread = NULL;
-		}else{
-			::SetThreadPriority( m_hThread, THREAD_PRIORITY_TIME_CRITICAL );
-			m_hTsRecv = ::CreateEvent ( NULL, FALSE, FALSE, NULL );
+		// FIFO初期化
+		EM2874Device::write_back_t *pwback = NULL ;
+		EM2874Device::write_back_t wback ;
+		if(!TSCACHING_LEGACY) {
+			m_evThreadSuspend = CreateEvent(NULL,FALSE,FALSE,NULL) ;
+			m_evThreadResume = CreateEvent(NULL,FALSE,FALSE,NULL) ;
+			m_cntThreadSuspend = 0 ;
+			size_t PacketSize = TSDATASIZE ;
+			if(TSCACHING_DEFRAGMENT)
+				PacketSize = max(TSCACHING_DEFRAGSIZE,PacketSize);
+			m_fifo = new CAsyncFifo(
+			  ASYNCTS_QUEUENUM,ASYNCTS_QUEUEMAX,ASYNCTS_EMPTYBORDER,
+			  PacketSize,TSTHREADWAIT ) ;
+			if(m_fifo) {
+				m_fifo->SetEmptyLimit(ASYNCTS_EMPTYLIMIT) ;
+				m_fifo->SetModerateAllocating(TSALLOCMODERATE);
+				#if TSWRITEBACK
+				wback.begin_func = OnWriteBackBegin ;
+				wback.finish_func = OnWriteBackFinish ;
+				wback.arg = (void*) this ;
+				pwback = &wback ;
+				#endif
+			}
 		}
-#endif
+
+		if(!pwback) {
+		  m_TsBuffSize = (int*)VirtualAlloc( NULL, RINGBUFF_SIZE*USBBULK_XFERSIZE + 0x1000, MEM_COMMIT, PAGE_READWRITE );
+		  if(m_TsBuffSize == NULL)    throw (const DWORD)__LINE__;
+		  m_pTsBuff = (BYTE*)(m_TsBuffSize + 0x400);
+		}else {
+		  m_TsBuffSize = NULL ;
+		  m_pTsBuff = NULL ;
+		}
+		m_indexTsBuff = 0;
+		m_cntThreadSuspend=0 ;
+
+		usbDev->SetBuffer( (void*)m_TsBuffSize, pwback );
+		usbDev->TransferStart();
+
+		if(!TSCACHING_LEGACY) {
+			m_hThread = (HANDLE)_beginthreadex( NULL, 0, TsThread, (PVOID)this, 0, NULL );
+			if(m_hThread == INVALID_HANDLE_VALUE) {
+				m_hThread = NULL;
+			}else{
+				::SetThreadPriority( m_hThread, THREAD_PRIORITY_HIGHEST/*TIME_CRITICAL*/ );
+			}
+		}
+
 		// デバイス使用準備完了 選局はまだ
+		DBGOUT("OpenTuner done.\n");
 	}
-	catch (const DWORD dwErrorStep) {
+	catch (
+		const DWORD
+#ifdef _DEBUG
+		dwErrorStep
+#endif
+		) {
 		// Error
 		DBG_INFO("BonDriver_FSUSB2N:OpenTuner dwErrorStep = %lu\n", dwErrorStep);
 
@@ -111,24 +227,24 @@ const BOOL CBonTuner::OpenTuner()
 
 void CBonTuner::CloseTuner()
 {
-	if(m_TsBuffSize)
-	{
-		usbDev->TransferStop();
-		usbDev->SetBuffer(NULL);
-		::VirtualFree( (LPVOID)m_TsBuffSize, 0, MEM_RELEASE );
-		m_TsBuffSize = NULL;
-	}
 
-#ifndef NO_TSTHREAD
 	if(m_hThread != NULL) {
-		if(::WaitForSingleObject(m_hThread, 1500) != WAIT_OBJECT_0) {
+		if(m_evThreadSuspend) PulseEvent(m_evThreadSuspend) ;
+		if(m_evThreadResume) PulseEvent(m_evThreadResume) ;
+		usbDev->TransferStop();
+		if(::WaitForSingleObject(m_hThread, 5000) != WAIT_OBJECT_0) {
 			::TerminateThread(m_hThread, 0);
 		}
 		::CloseHandle(m_hThread);
-		::CloseHandle(m_hTsRecv);
 		m_hThread = NULL;
 	}
-#endif
+
+	if(m_TsBuffSize||(usbDev&&usbDev->WriteBackEnabled())) {
+		usbDev->TransferStop();
+		usbDev->SetBuffer(NULL);
+		if(m_TsBuffSize) ::VirtualFree( (LPVOID)m_TsBuffSize, 0, MEM_RELEASE );
+		m_TsBuffSize = NULL;
+	}
 
 	if(pDev) {
 		delete pDev;
@@ -139,10 +255,37 @@ void CBonTuner::CloseTuner()
 		delete usbDev;
 		usbDev = NULL;
 	}
+
+	if(m_fifo) {
+	  delete m_fifo ;
+	  m_fifo = NULL ;
+	}
+	if(m_evThreadSuspend) {
+	  ::CloseHandle(m_evThreadSuspend) ;
+	  m_evThreadSuspend=NULL ;
+	}
+	if(m_evThreadResume) {
+	  ::CloseHandle(m_evThreadResume) ;
+	  m_evThreadResume=NULL ;
+	}
+
+	DBGOUT("CloseTuner done.\n");
 }
+
 
 const BOOL CBonTuner::SetChannel(const BYTE bCh)
 {
+	if(UserChannelExists()) {
+	  #if 0
+	  for(size_t i=m_UserSpaceIndices.size()-1;i>=0;i--) {
+		if(bCh>m_UserSpaceIndices[i]) {
+		  return SetChannel(DWORD(i),DWORD(bCh-m_UserSpaceIndices[i])) ;
+		}
+	  }
+	  #endif
+	  return FALSE ;
+	}
+
 	// IBonDriverとの互換性を保つために暫定
 
 	if(bCh < 13 || bCh > 52) return FALSE;
@@ -161,33 +304,35 @@ const DWORD CBonTuner::WaitTsStream(const DWORD dwTimeOut)
 	{
 		return WAIT_OBJECT_0;
 	}
-	if(m_TsBuffSize == NULL)
+	if(m_TsBuffSize == NULL&&(!usbDev||!usbDev->WriteBackEnabled()))
 	{
 		::Sleep(dwTimeOut < 2000 ? dwTimeOut : 2000 );
 		return WAIT_TIMEOUT;
 	}
-#ifdef NO_TSTHREAD
-	DWORD dwRet = ::WaitForSingleObject( usbDev->GetHandle() , dwTimeOut );
+	if(TSCACHING_LEGACY) {
+		DWORD dwRet = ::WaitForSingleObject( usbDev->GetHandle() , dwTimeOut );
 
-	if( dwRet == WAIT_OBJECT_0  )
-	{
-		int nRet = usbDev->DispatchTSRead();
-		if( nRet < 0 )	return WAIT_FAILED;
+		if( dwRet == WAIT_OBJECT_0  )
+		{
+			int nRet = usbDev->DispatchTSRead();
+			if( nRet < 0 )  return WAIT_FAILED;
+		}
+		return dwRet;
+	}else {
+		return m_eoCaching.wait(dwTimeOut);
 	}
-	return dwRet;
-#else
-	return ::WaitForSingleObject(m_hTsRecv, dwTimeOut);
-#endif
 }
 
 const DWORD CBonTuner::GetReadyCount()
 {
-	// 取り出し可能TSデータ数を取得する
+	// 取り出し可能TSデータ数を取得する(FIFO)
+	if(m_fifo) return (DWORD)m_fifo->Size();
+
+	// 取り出し可能TSデータ数を取得する(Legacy)
 	if(m_TsBuffSize == NULL) return 0;
 	const int indexCurrent = m_indexTsBuff;
 	int val;
 
-#ifdef NO_TSTHREAD
 	DWORD dwRet = ::WaitForSingleObject( usbDev->GetHandle() , 0 );
 
 	if( dwRet == WAIT_FAILED )
@@ -197,7 +342,6 @@ const DWORD CBonTuner::GetReadyCount()
 	{
 		usbDev->DispatchTSRead();
 	}
-#endif
 
 	// size=0をskip
 	do {
@@ -225,13 +369,19 @@ const BOOL CBonTuner::GetTsStream(BYTE *pDst, DWORD *pdwSize, DWORD *pdwRemain)
 		}
 		return TRUE;
 	}
-	
+
 	return FALSE;
 }
 
 const BOOL CBonTuner::GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwRemain)
 {
-	//
+	// FIFO
+	if(m_fifo) {
+		m_fifo->Pop(ppDst,pdwSize,pdwRemain) ;
+		return TRUE ;
+	}
+
+	// Legacy
 	if(m_TsBuffSize == NULL) return FALSE;
 	const unsigned int BuffBlockSize = -m_TsBuffSize[0x3ff];
 	int val;
@@ -253,27 +403,33 @@ const BOOL CBonTuner::GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwRemain
 			m_indexTsBuff++;
 		}
 	} while(val == BuffBlockSize);
-
-	*pdwSize = dataLen;
 	*pdwRemain = GetReadyCount();
+	*pdwSize = dataLen;
+
 	return TRUE;
 }
 
 void CBonTuner::PurgeTsStream()
 {
-	if(m_TsBuffSize == NULL) return;
-	if(m_TsBuffSize[m_indexTsBuff] < 0) return;
+	// TsThreadが一時停止するのを待機する
+	if(m_hThread) {
+	  ThreadSuspend() ;
+	}
 
-	// Bufferから取り出し可能データをパージする
-	for(int i = 0; i <= 0x3fe; i++) {
-		if(m_TsBuffSize[i] == -1)
-		{
-			m_indexTsBuff = i;
-			return;
-		}else if(m_TsBuffSize[i] == -2)
-		{
-			return;
-		}
+	// バッファから取り出し可能データをパージする
+	if(m_fifo) {
+	  exclusive_lock lock(&m_coPurge) ;
+	  ZeroMemory(m_mapCache,sizeof(m_mapCache));
+	  m_fifo->Purge(true) ;
+	}
+
+	if(m_TsBuffSize&&usbDev) {
+	  m_indexTsBuff=usbDev->GetTsBuffIndex() ;
+	}
+
+	// TsThreadを再開する
+	if(m_hThread) {
+	  ThreadResume();
 	}
 }
 
@@ -286,7 +442,7 @@ void CBonTuner::Release()
 LPCTSTR CBonTuner::GetTunerName(void)
 {
 	// チューナ名を返す
-	return TEXT("KTV-FSUSB2新");
+	return TEXT("KTV-FSUSB2N");
 }
 
 const BOOL CBonTuner::IsTunerOpening(void)
@@ -296,6 +452,11 @@ const BOOL CBonTuner::IsTunerOpening(void)
 
 LPCTSTR CBonTuner::EnumTuningSpace(const DWORD dwSpace)
 {
+	if(UserChannelExists()) {
+	  if(dwSpace<m_UserSpaceIndices.size())
+		return m_UserChannels[m_UserSpaceIndices[dwSpace]].Space.c_str() ;
+	  return NULL ;
+	}
 	// 使用可能なチューニング空間を返す
 	if(dwSpace == 0U) return TEXT("地デジ");
 	else if(m_ChannelList != NULL && dwSpace == 1U) return TEXT("地デジ(追加)");
@@ -304,23 +465,33 @@ LPCTSTR CBonTuner::EnumTuningSpace(const DWORD dwSpace)
 
 LPCTSTR CBonTuner::EnumChannelName(const DWORD dwSpace, const DWORD dwChannel)
 {
+	if(UserChannelExists()) {
+	  if(dwSpace<m_UserSpaceIndices.size()) {
+		DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
+		DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size() ? m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
+		if(dwChannel<end-begin)
+		  return m_UserChannels[begin+dwChannel].Name.c_str() ;
+	  }
+	  return NULL ;
+	}
+
 	// 使用可能なChannelを返す
 
-	static const TCHAR ChannelNameT[][3] = 
+	static const TCHAR ChannelNameT[][3] =
 	{
 		TEXT("13"), TEXT("14"), TEXT("15"), TEXT("16"), TEXT("17"), TEXT("18"), TEXT("19"),
 		TEXT("20"), TEXT("21"), TEXT("22"), TEXT("23"), TEXT("24"), TEXT("25"), TEXT("26"), TEXT("27"), TEXT("28"), TEXT("29"),
-		TEXT("30"), TEXT("31"), TEXT("32"), TEXT("33"), TEXT("34"), TEXT("35"), TEXT("36"), TEXT("37"), TEXT("38"), TEXT("39"), 
-		TEXT("40"), TEXT("41"), TEXT("42"), TEXT("43"), TEXT("44"), TEXT("45"), TEXT("46"), TEXT("47"), TEXT("48"), TEXT("49"), 
+		TEXT("30"), TEXT("31"), TEXT("32"), TEXT("33"), TEXT("34"), TEXT("35"), TEXT("36"), TEXT("37"), TEXT("38"), TEXT("39"),
+		TEXT("40"), TEXT("41"), TEXT("42"), TEXT("43"), TEXT("44"), TEXT("45"), TEXT("46"), TEXT("47"), TEXT("48"), TEXT("49"),
 		TEXT("50"), TEXT("51"), TEXT("52")
 	};
 
 	if(m_ChannelList != NULL && dwSpace == 1U) {
 		/* ユーザー定義 */
-		DWORD dwChannelLen		= m_ChannelList[0] >> 16;
-		DWORD dwNumOfChannels	= m_ChannelList[0] & 0xffff;
+		DWORD dwChannelLen      = m_ChannelList[0] >> 16;
+		DWORD dwNumOfChannels   = m_ChannelList[0] & 0xffff;
 		TCHAR *ptrStr = (TCHAR*)(m_ChannelList + dwNumOfChannels + 1);
-		if(dwChannel < dwNumOfChannels)	return ptrStr + (dwChannelLen * dwChannel);
+		if(dwChannel < dwNumOfChannels) return ptrStr + (dwChannelLen * dwChannel);
 	}else if(dwSpace == 0U) {
 		if(dwChannel < 40)
 			return ChannelNameT[dwChannel];
@@ -335,7 +506,32 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 
 	DWORD dwFreq;
 
-	if(m_ChannelList != NULL && dwSpace == 1U) {
+	if(UserChannelExists()) {
+	  dwFreq=0 ;
+	  if(dwSpace<m_UserSpaceIndices.size()) {
+		DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
+		DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size() ? m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
+		if(dwChannel<end-begin) {
+		  DWORD index = begin + dwChannel ;
+		  if(m_UserChannels[index].isMegaHzTuning()) {
+			dwFreq = (DWORD) (m_UserChannels[index].MegaHz * 1000.f) ; // kHz
+		  }else {
+			DWORD ch = m_UserChannels[index].Channel ;
+			if(ch < 4)          dwFreq =  93UL + (ch - 1)   * 6UL ;
+			else if(ch < 8)     dwFreq = 173UL + (ch - 4)   * 6UL ;
+			else if(ch < 13)    dwFreq = 195UL + (ch - 8)   * 6UL ;
+			else if(ch < 63)    dwFreq = 473UL + (ch - 13)  * 6UL ;
+			else if(ch < 122)   dwFreq = 111UL + (ch - 113) * 6UL ;
+			else if(ch ==122)   dwFreq = 167UL ; // C22
+			else if(ch < 136)   dwFreq = 225UL + (ch - 123) * 6UL ;
+			else                dwFreq = 303UL + (ch - 136) * 6UL ;
+			dwFreq *= 1000UL ; // kHz
+			dwFreq +=  143UL ; // + 1000/7 kHz
+		  }
+		}
+	  }
+	}
+	else if(m_ChannelList != NULL && dwSpace == 1U) {
 		/* ユーザー定義 */
 		dwFreq = m_ChannelList[dwChannel + 1];
 	}else if(dwSpace == 0U) {
@@ -346,15 +542,24 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	if(dwFreq < 90000U || dwFreq > 772000U) return FALSE;
 
 	// Channel変更
+	ThreadSuspend() ;
+
 	usbDev->TransferPause();
 
-	pDev->SetFrequency(dwFreq);
-	::Sleep(5);
-	pDev->ResetDeMod();
-	::Sleep(20);
+	for(int i=0;i<2;i++) {
+		pDev->SetFrequency(dwFreq);
+		::Sleep(5);
+		pDev->ResetDeMod();
+		::Sleep(20);
+	}
+
 	usbDev->TransferResume();
 	::Sleep(10);
+
 	PurgeTsStream();
+	ThreadResume() ;
+
+
 
 	// Channel情報更新
 	m_dwCurSpace = dwSpace;
@@ -375,40 +580,85 @@ const DWORD CBonTuner::GetCurChannel(void)
 	return m_dwCurChannel;
 }
 
-#ifndef NO_TSTHREAD
-unsigned int __stdcall CBonTuner::TsThread (PVOID pv)
+unsigned int CBonTuner::TsThreadMain ()
 {
+	const bool WriteBackEnabled = usbDev->WriteBackEnabled() ;
+	const unsigned int BuffBlockSize = WriteBackEnabled ? 0 : -m_TsBuffSize[0x3ff];
+	const bool IgnoreFragment = TSCACHING_DEFRAGMENT ? false : true ;
 	DWORD dwRet;
 	int nRet;
-	EM2874Device *pUsbDev;
 
-	if(pv && ((CBonTuner*)pv)->usbDev)
-	{
-		pUsbDev = ((CBonTuner*)pv)->usbDev;
-	}else{
-		::_endthreadex (0);
-		return 0;
-	}
+	if(!usbDev)
+	  return 0;
 
 	for(;;)
 	{
-		dwRet = ::WaitForSingleObject( pUsbDev->GetHandle() , 1000 );
+		HANDLE evTs = usbDev->GetHandle() ;  if(!evTs) break ;
+		dwRet = ::WaitForSingleObject( evTs , TSTHREADWAIT );
 
-		if( dwRet == WAIT_FAILED )
-		{
+		exclusive_lock slock(&m_exSuspend) ;
+		if(m_cntThreadSuspend>0) {
+			  slock.unlock() ;
+			  ::SetEvent(m_evThreadSuspend) ;
+			  ::WaitForSingleObject(m_evThreadResume,SUSPENDTIMEOUT) ;
+			  continue ;
+		}
+		slock.unlock() ;
+		if( dwRet == WAIT_FAILED ) {
 			break;
-		}else if( dwRet == WAIT_OBJECT_0 || dwRet == WAIT_TIMEOUT )
-		{
-			nRet = pUsbDev->DispatchTSRead();
-			if(nRet > 0)	::SetEvent(((CBonTuner*)pv)->m_hTsRecv);
-			if(nRet < 0)	break;
+		}else if( dwRet == WAIT_OBJECT_0 /*|| dwRet == WAIT_TIMEOUT*/ ) {
+		  nRet = usbDev->DispatchTSRead();
+		  if(nRet < 0)    break;
+		  else if(WriteBackEnabled) /* no action */ ;
+		  else if(nRet > 0)  {
+			if(m_TsBuffSize != NULL) {
+			  const int indexCurrent = usbDev->GetTsBuffIndex() ;
+			  int ln;
+			  while(m_indexTsBuff != indexCurrent) {
+				ln = m_TsBuffSize[m_indexTsBuff];
+				if(ln>=0) {
+				  // Copying received buffers to fifo.
+				  BYTE *p =  m_pTsBuff + (m_indexTsBuff * BuffBlockSize) ;
+				  if(m_fifo->Push(p,ln,IgnoreFragment)>0) m_eoCaching.set() ;
+				  m_indexTsBuff++ ;
+				}else if(ln <= -2) {
+				  m_indexTsBuff = 0 ;
+				}
+				if(ln==-1) break ;
+			  }
+			}
+		  }
 		}
 	}
-	::_endthreadex (0);
 	return 0;
 }
-#endif
-
+unsigned int __stdcall CBonTuner::TsThread (PVOID pv)
+{
+	register CBonTuner *_this = static_cast<CBonTuner*>(pv) ;
+	unsigned int r = _this->TsThreadMain () ;
+	::_endthreadex (r);
+	return r;
+}
+void CBonTuner::ThreadSuspend()
+{
+  exclusive_lock lock(&m_exSuspend) ;
+  if(!m_cntThreadSuspend++) {
+	  lock.unlock() ;
+	  if(usbDev) {
+		HANDLE evTs = usbDev->GetHandle() ;
+		if(evTs) ::SetEvent(evTs) ;
+	  }
+	  if(m_evThreadSuspend) ::WaitForSingleObject(m_evThreadSuspend,SUSPENDTIMEOUT);
+  }
+}
+void CBonTuner::ThreadResume()
+{
+  exclusive_lock lock(&m_exSuspend) ;
+  if(!--m_cntThreadSuspend) {
+	  lock.unlock() ;
+	  if(m_evThreadResume) ::SetEvent(m_evThreadResume) ;
+  }
+}
 
 bool CBonTuner::LoadData ()
 {
@@ -427,20 +677,44 @@ bool CBonTuner::LoadData ()
 		RegCloseKey(hKey);
 	}
 
+	LoadUserChannels() ;
+
 	return true;
 }
 
+	static DWORD RegReadDword(HKEY hKey,LPCTSTR name,DWORD defVal=0) {
+		BYTE buf[sizeof DWORD] ;
+		DWORD rdSize = sizeof DWORD ;
+		DWORD type = 0 ;
+		if(ERROR_SUCCESS==RegQueryValueEx(
+		  hKey, name, 0, &type, buf, &rdSize )) {
+			if(type==REG_DWORD) {
+				DWORD result = *(DWORD*)(&buf[0]) ;
+				//TRACE(L"Mode: %s=%d\n",name,result) ;
+				DBGOUT("Mode: %s=%d\n",wcs2mbcs(name).c_str(),result);
+				return result ;
+			}
+		}
+		return defVal ;
+	}
+
 void CBonTuner::ReadRegMode (HKEY hPKey)
 {
-	DWORD dwValue, dwLen, dwType;
+	DWORD FunctionMode = DWORD(EM2874Device::UserSettings&0xffff) | DWORD(KtvDevice::UserSettings)<<16 ;
 
-	dwLen = sizeof(dwValue);
-	if(ERROR_SUCCESS != RegQueryValueEx( hPKey, TEXT("FunctionMode"), NULL, &dwType, (BYTE*)&dwValue, &dwLen)
-		|| dwLen != sizeof(DWORD) ) {
-		return;
-	}
-	EM2874Device::UserSettings = dwValue & 0xffff;
-	KtvDevice::UserSettings = dwValue >> 16;
+	#define LOADDW(val) do { val = RegReadDword(hPKey,L#val,val); } while(0)
+	LOADDW(FunctionMode);
+	LOADDW(TSCACHING_LEGACY);
+	LOADDW(TSCACHING_DEFRAGMENT);
+	LOADDW(TSCACHING_DEFRAGSIZE);
+	LOADDW(ASYNCTS_QUEUENUM);
+	LOADDW(ASYNCTS_QUEUEMAX);
+	LOADDW(ASYNCTS_EMPTYBORDER);
+	LOADDW(ASYNCTS_EMPTYLIMIT);
+	#undef LOADDW
+
+	EM2874Device::UserSettings = FunctionMode & 0xffff;
+	KtvDevice::UserSettings = FunctionMode >> 16;
 }
 
 void CBonTuner::ReadRegChannels (HKEY hPKey)
@@ -479,3 +753,39 @@ void CBonTuner::ReadRegChannels (HKEY hPKey)
 	}
 	RegCloseKey(hKey);
 }
+
+void *CBonTuner::OnWriteBackBegin(int id, size_t max_size, void *arg)
+{
+	CBonTuner *tuner = static_cast<CBonTuner*>(arg) ;
+	CAsyncFifo::CACHE *cache = tuner->m_fifo->BeginWriteBack(TSALLOCWAITING) ;
+	if(!cache) return NULL ;
+	else cache->resize(max_size) ;
+	tuner->m_coPurge.lock() ;
+	tuner->m_mapCache[id] = cache ;
+	tuner->m_coPurge.unlock() ;
+	return cache->data() ;
+}
+
+void CBonTuner::OnWriteBackFinish(int id, size_t wrote_size, void *arg)
+{
+	CBonTuner *tuner = static_cast<CBonTuner*>(arg) ;
+	exclusive_lock purgeLock(&tuner->m_coPurge);
+	CAsyncFifo::CACHE *cache = tuner->m_mapCache[id] ;
+	if(cache) {
+		tuner->m_mapCache[id]=NULL ;
+		purgeLock.unlock();
+		if(TSCACHING_DEFRAGMENT) {
+			if (tuner->m_fifo->Push(cache->data(), static_cast<DWORD>(wrote_size), false, TSALLOCWAITING) > 0)
+			{ tuner->m_eoCaching.set(); cache->resize(0); }
+			if (tuner->m_fifo->FinishWriteBack(cache,true))
+			  tuner->m_eoCaching.set();
+		}else {
+			cache->resize(wrote_size) ;
+			if(tuner->m_fifo->FinishWriteBack(cache))
+				tuner->m_eoCaching.set() ;
+		}
+	}
+}
+
+} // End of namespace FSUSB2N
+

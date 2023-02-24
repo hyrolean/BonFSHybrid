@@ -4,7 +4,16 @@
   2016-01-27
 */
 
+#ifdef LEGACY_STDINT
+
+#include "stdint_.h"
+
+#else
+
 #include <stdint.h>
+
+#endif
+
 #include <errno.h>
 #include <string.h>
 #include <malloc.h>

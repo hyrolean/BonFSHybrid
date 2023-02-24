@@ -14,8 +14,7 @@
 #include "it9175_usb.h"
 #include "it9175_priv.h"
 #include "message.h"
-
-#define TS_BulkSize  305
+#include "tsbuff.h"
 
 #define ARRAY_SIZE(x)  (sizeof(x)/(sizeof(x[0])))
 
@@ -501,7 +500,7 @@ static int it9175_tuner_init(struct state_st* const st)
 		if((ret = writeRegTable(st, init3_mtab, ARRAY_SIZE(init3_mtab)))) goto err1;
 	}
 	{//# frame size, packet size= 512 /4 = 128
-		const unsigned TS_FrameSize = TS_BulkSize * 188 / 4;
+		const unsigned TS_FrameSize = TS_PacketSize / 4;
 		rbuf[0] = TS_FrameSize & 0xFF;
 		rbuf[1] = (TS_FrameSize >> 8) & 0xFF;
 		if((ret = writeRegs(st, 0xdd88, rbuf, 2))) goto err1;
@@ -650,7 +649,7 @@ static int it9175_set_params(struct state_st* const st, const uint32_t freq)
 	iqik_m_cal = (0 == st->clock_d) ? (ret * 9) >> 5 :  ret >> 1;
 
 	if((ret = writeReg(st, 0x800160, lna_band))) goto err1;
-	
+
 	{//# bandwidth
 		const uint8_t reg80ec56[4] = {2, 4, 6, 0};
 		if((ret = writeReg(st, 0x80ec56, reg80ec56[st->bw_mode]))) goto err1;
@@ -711,7 +710,7 @@ int it9175_create(it9175_state* const  state, struct usb_endpoint_st * const pus
 	}
 	pusbep->endpoint = EP_TS1;
 	pusbep->startstopFunc = NULL;
-	pusbep->xfer_size = TS_BulkSize * 188;
+	pusbep->xfer_size = TS_PacketSize;
 	st->chip_id = 0;
 	st->fd = pusbep->fd;
 
@@ -872,11 +871,11 @@ err1:
 }
 
 /* Transmission and Multiplexing Configuration and Control (See ARIB STD-B31) */
-int it9175_readTMCC(const it9175_state state, void* const pData)
+int it9175_readTMCC(const it9175_state state, struct TMCC_data* const pData)
 {
 	int ret, j;
 	struct state_st* const s = state;
-	uint8_t rbuf[4], val, *ptr = pData, txmode;
+	uint8_t rbuf[4], val, *ptr = (uint8_t*) pData, txmode;
 	const uint8_t n_txmod[4] = {1,3,2,0};
 
 	if((ret = readRegs(s, 0x80f900, rbuf, 3))) goto err1;

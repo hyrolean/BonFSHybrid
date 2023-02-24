@@ -4,7 +4,11 @@
   2015-12-25
 */
 #pragma once
+#ifdef LEGACY_STDINT
+#include "stdint_.h"
+#else
 #include <stdint.h>
+#endif
 
 int it9175_ctrl_msg(void* const, const uint8_t cmd, const uint8_t mbox, const uint8_t wrlen, const uint8_t rdlen);
 int it9175_usbSetTimeout(void* const pst);

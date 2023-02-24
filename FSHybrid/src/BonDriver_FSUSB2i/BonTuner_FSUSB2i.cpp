@@ -55,11 +55,9 @@ const BOOL CBonTuner::OpenTuner()
 		}
 		//# device initialize
 		m_USBEP.fd = m_hUsbDev;
-		if(it9175_create(&pDev, &m_USBEP) != 0) {
-			throw (const DWORD)__LINE__;
-		}
+		if(it9175_create(&pDev, &m_USBEP) != 0) throw (const DWORD)__LINE__;
 		//# fifo
-		FifoInitialize(&m_USBEP) ;
+		if(!FifoInitialize(&m_USBEP)) throw (const DWORD)__LINE__;
 
 		//# device has been ready.
 		//LoadData();
@@ -82,14 +80,20 @@ void CBonTuner::CloseTuner()
 		pDev = NULL;
 	}
 	FreeDevice(m_hDev,m_hUsbDev);
+	m_USBEP.dev=NULL;
 }
 
 const float CBonTuner::GetSignalLevel(void)
 {
 	if(NULL == pDev) return 0.0f;
-	uint8_t statData[44];
-	if(it9175_readStatistic(pDev, statData) != 0) return 0.1f;
-	return statData[3] * 1.0f;
+	uint8_t dB; float lv ;
+    if(m_USBEP.dev&&m_USBEP.lockunlockFunc) //# lock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
+	if(it9175_readSNRatio(pDev, &dB) != 0) lv = 0.1f;
+	else lv = dB * 1.0f;
+    if(m_USBEP.dev&&m_USBEP.lockunlockFunc) //# unlock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
+    return lv ;
 }
 
 void CBonTuner::Release()  //# release the instance

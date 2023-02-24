@@ -81,7 +81,7 @@ const BOOL CBonTuner::OpenTuner()
 		usbDev->SetupUSBEndPoint(&m_USBEP);
 
 		// FIFO初期化
-		FifoInitialize(&m_USBEP);
+		if(!FifoInitialize(&m_USBEP)) throw (const DWORD)__LINE__;
 
 		// デバイス使用準備完了 選局はまだ
 		DBGOUT("OpenTuner done.\n");
@@ -127,7 +127,17 @@ const float CBonTuner::GetSignalLevel(void)
 {
 	if(pDev == NULL) return 0.0f;
 
+	if(m_USBEP.dev) { //# lock
+		if(m_USBEP.lockunlockFunc)
+			m_USBEP.lockunlockFunc(m_USBEP.dev,1);
+	}
+
 	float db = pDev->DeMod_GetQuality() * 0.01f;
+
+	if(m_USBEP.dev) { //# unlock
+		if(m_USBEP.lockunlockFunc)
+			m_USBEP.lockunlockFunc(m_USBEP.dev,0);
+	}
 
 	return db ;
 }

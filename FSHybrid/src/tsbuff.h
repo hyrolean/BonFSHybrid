@@ -7,7 +7,7 @@
 
 
 //# TS Packet size (real packet size)
-#define TS_PacketSize  48128 //26624 //122880
+#define TS_PacketSize   48128 //26624 //122880
 
 //# TS Delta size that is reserved bytes protected from device's messy overlapping
 #define TS_DeltaSize  1024

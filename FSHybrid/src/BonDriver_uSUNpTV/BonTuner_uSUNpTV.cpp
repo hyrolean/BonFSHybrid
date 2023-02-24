@@ -28,11 +28,10 @@ DWORD USUNPTV_CHANNEL_WAIT    = 480 ;
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
 CBonTuner::CBonTuner()
-: CBonFSHybrid(), m_dwCurSpace(123), m_dwCurChannel(0), m_hasStream(FALSE),
+: CBonFSHybrid(true), m_dwCurSpace(123), m_dwCurChannel(0), m_hasStream(FALSE),
  m_hDev(NULL), m_hUsbDev(NULL),pDev(NULL), demodDev(NULL), m_selectedTuner(-1),
  m_chCur()
 {
-	m_hasSatellite=true ;
 	fill_n(tunerDev, 2, (void*)NULL);
 }
 
@@ -92,7 +91,7 @@ const BOOL CBonTuner::OpenTuner()
 		//# demod set params
 		if( tc90522_selectDevice(demodDev, 1) ) throw (const DWORD)__LINE__;
 		//# fifo
-		FifoInitialize(&m_USBEP);
+		if(!FifoInitialize(&m_USBEP)) throw (const DWORD)__LINE__;
 
 		//# device has been ready.
 	}
@@ -126,16 +125,29 @@ void CBonTuner::CloseTuner()
 		pDev = NULL;
 	}
 	FreeDevice(m_hDev,m_hUsbDev);
+	m_USBEP.dev=NULL;
 	m_chCur = CHANNEL();
 }
 
 const float CBonTuner::GetSignalLevel(void)
 {
-	if(!m_hasStream) return 0.f ;
 	if(0 > m_selectedTuner || (! demodDev) ) return -3.1f;
+	if(!m_hasStream) return 0.f ;
 	unsigned statData[4];
-	if(tc90522_readStatistic(demodDev, m_selectedTuner, statData) ) return -3.2f;
-	return statData[1] * 0.01f;
+	float lv ;
+	if(m_USBEP.dev) { //# lock
+		if(m_USBEP.lockunlockFunc)
+			m_USBEP.lockunlockFunc(m_USBEP.dev,1);
+	}
+	if(tc90522_readStatistic(demodDev, m_selectedTuner, statData) )
+		lv = -3.2f;
+	else
+		lv = statData[1] * 0.01f;
+	if(m_USBEP.dev) { //# unlock
+		if(m_USBEP.lockunlockFunc)
+			m_USBEP.lockunlockFunc(m_USBEP.dev,0);
+	}
+	return lv ;
 }
 
 void CBonTuner::Release()  //# release the instance

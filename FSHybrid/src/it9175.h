@@ -26,5 +26,8 @@ struct TMCC_data {
 int it9175_readTMCC(const it9175_state, struct TMCC_data* const);
 
 int it9175_readStatistic(const it9175_state, uint8_t* const data);
+int it9175_readSNRatio(const it9175_state, uint8_t* const dB);
+
+int it9175_lockunlockMutex(const it9175_state, const int lock);
 
 /*EOF*/

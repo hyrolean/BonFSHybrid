@@ -30,7 +30,7 @@ DWORD PastSleep(DWORD wait,DWORD start)
 wstring mbcs2wcs(string src)
 {
     if(src.empty()) return wstring(L"") ;
-    HEAPBUFFER<wchar_t> wcs(src.length()*3 + 3);
+    BUFFER<wchar_t> wcs(src.length()*3 + 3);
     size_t wLen = 0;
     setlocale(LC_ALL,"japanese");
     mbstowcs_s(&wLen, wcs.data(), src.length()*3+1 , src.c_str(), _TRUNCATE);
@@ -41,7 +41,7 @@ wstring mbcs2wcs(string src)
 string wcs2mbcs(wstring src)
 {
     if(src.empty()) return string("") ;
-    HEAPBUFFER<char> mbcs(src.length()*3 + 3) ;
+    BUFFER<char> mbcs(src.length()*3 + 3) ;
     size_t mbLen = 0 ;
     setlocale(LC_ALL,"japanese");
     wcstombs_s(&mbLen, mbcs.data(), src.length()*3+1 , src.c_str(), _TRUNCATE);
@@ -51,7 +51,7 @@ string wcs2mbcs(wstring src)
 //---------------------------------------------------------------------------
 string itos(int val,int radix)
 {
-  HEAPBUFFER<char> str(72) ;
+  BUFFER<char> str(72) ;
   if(!_itoa_s(val,str.data(),70,radix))
     return static_cast<string>(str.data()) ;
   return "NAN" ;
@@ -59,7 +59,7 @@ string itos(int val,int radix)
 //---------------------------------------------------------------------------
 wstring itows(int val,int radix)
 {
-  HEAPBUFFER<wchar_t> str(72) ;
+  BUFFER<wchar_t> str(72) ;
   if(!_itow_s(val,str.data(),70,radix))
     return static_cast<wstring>(str.data()) ;
   return L"NAN" ;
@@ -67,7 +67,7 @@ wstring itows(int val,int radix)
 //---------------------------------------------------------------------------
 string upper_case(string str)
 {
-  HEAPBUFFER<char> temp(str.length()+1) ;
+  BUFFER<char> temp(str.length()+1) ;
   CopyMemory(temp.data(),str.c_str(),(str.length()+1)*sizeof(char)) ;
   _strupr_s(temp.data(),str.length()+1) ;
   return static_cast<string>(temp.data()) ;
@@ -75,7 +75,7 @@ string upper_case(string str)
 //---------------------------------------------------------------------------
 string lower_case(string str)
 {
-  HEAPBUFFER<char> temp(str.length()+1) ;
+  BUFFER<char> temp(str.length()+1) ;
   CopyMemory(temp.data(),str.c_str(),(str.length()+1)*sizeof(char)) ;
   _strlwr_s(temp.data(),str.length()+1) ;
   return static_cast<string>(temp.data()) ;

@@ -10,6 +10,10 @@
 
 using namespace std;
 
+//===========================================================================
+namespace BonHybrid {
+//---------------------------------------------------------------------------
+
 #define UNITEDINIFILENAME "BonDriver_FSHybrid.ini"
 #define INIVALUELOADER_SECTION "BonTuner"
 #define INICHANNELS_SECTION "Channels"
@@ -118,10 +122,10 @@ public:
 //===========================================================================
 // CBonFSHybrid
 //---------------------------------------------------------------------------
-CBonFSHybrid::CBonFSHybrid()
+CBonFSHybrid::CBonFSHybrid(bool hasSatellite)
 {
 	m_pThis = this;
-	m_hasSatellite=false ;
+	m_hasSatellite=hasSatellite ;
 	tsthr=NULL ;
 	m_fifo=NULL ;
 	FifoFinalize() ;
@@ -431,9 +435,9 @@ bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
 	}
 	//# TS receive thread
 	if( tsthread_create(&tsthr, usbep, pwback) ) {
-		throw (const DWORD)__LINE__;
+		return false;
 	}
-	return m_fifo!=NULL ;  // true : general, false : legacy
+	return true;
 }
 //---------------------------------------------------------------------------
 void CBonFSHybrid::FifoFinalize()
@@ -493,8 +497,7 @@ void CBonFSHybrid::ReadIniChannels (const std::string iniFilename, CHANNELS &ini
 	BUFFER<char> buf(256) ;
 	DWORD n = 0;
 	do {
-		if (n)
-			buf.resize(buf.size()*2) ;
+		if (n) buf.resize(buf.size()*2) ;
 		n = GetPrivateProfileSectionA(INICHANNELS_SECTION, buf.data(), (DWORD)buf.size(), iniFilename.c_str());
 	} while (n == buf.size() - 2);
 	if (!n)
@@ -521,8 +524,9 @@ void CBonFSHybrid::ReadIniChannels (const std::string iniFilename, CHANNELS &ini
 		if (item.size() == 2) {
 			int val = 0 ;
 			if (sscanf_s(item[1].c_str(), "%i", &val) == 1) {
-				int idx = val >> 24;
-				iniChannels[idx] = CHANNEL(L"AUX", val & 0x00ffffff, mbcs2wcs(item[0])) ;
+				size_t idx = size_t(val) >> 24;
+				if(idx < numChannel)
+					iniChannels[idx] = CHANNEL(L"AUX", val & 0x00ffffff, mbcs2wcs(item[0])) ;
 			}
 		}
 		i += strlen(p);
@@ -582,6 +586,14 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
+	LOADDW(USBPIPEPOLICY_RAW_IO);
+	LOADDW(USBPIPEPOLICY_AUTO_CLEAR_STALL);
+	LOADDW(USBPIPEPOLICY_ALLOW_PARTIAL_READS);
+	LOADDW(USBPIPEPOLICY_AUTO_FLUSH);
+	LOADDW(USBPIPEPOLICY_IGNORE_SHORT_PACKETS);
+	LOADDW(USBPIPEPOLICY_SHORT_PACKET_TERMINATE);
+	LOADDW(USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT);
+	LOADDW(USBPIPEPOLICY_RESET_PIPE_ON_RESUME);
 	#undef LOADMSTRLIST
 	#undef LOADDW
 }
@@ -815,4 +827,6 @@ CBonFSHybrid::BAND CBonFSHybrid::CHANNEL::BandFromFreq(DWORD freq) {
 		return BAND_BS ;
 	return BAND_ND ;
 }
+//---------------------------------------------------------------------------
+} // End of namespace BonHybrid
 //===========================================================================

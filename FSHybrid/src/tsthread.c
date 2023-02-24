@@ -20,6 +20,16 @@
 
 #define ROUNDUP(n,w) (((n) + (w)) & ~(unsigned)(w))
 
+//# pipe policy settings
+BOOL USBPIPEPOLICY_RAW_IO = TRUE ;
+BOOL USBPIPEPOLICY_AUTO_CLEAR_STALL = TRUE ;
+BOOL USBPIPEPOLICY_ALLOW_PARTIAL_READS = TRUE ;
+BOOL USBPIPEPOLICY_AUTO_FLUSH = FALSE ;
+BOOL USBPIPEPOLICY_IGNORE_SHORT_PACKETS = FALSE ;
+BOOL USBPIPEPOLICY_SHORT_PACKET_TERMINATE = FALSE ;
+DWORD USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT = 5000UL ;
+BOOL USBPIPEPOLICY_RESET_PIPE_ON_RESUME = FALSE ;
+
 
 struct TSIO_CONTEXT {
 	OVERLAPPED ol;
@@ -71,7 +81,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 					ps->wback->finish_func(pContext->index,0,ps->wback->arg);
 				/*
 				else
-				    ps->actual_length[pContext->index]=0;*/
+					ps->actual_length[pContext->index]=0;*/
 				ResetEvent(pContext->ol.hEvent);
 				pContext->index=-1 ;
 			}
@@ -181,8 +191,12 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						bRet = TRUE;
 						dRet = 0;
 					}else {
+						if(ps->pUSB->lockunlockFunc)
+							 ps->pUSB->lockunlockFunc(ps->pUSB->dev,1) ;
 						bRet = WinUsb_GetOverlappedResult( ps->pUSB->fd, &(pContext->ol), &bytesRead, FALSE);
 						dRet = GetLastError();
+						if(ps->pUSB->lockunlockFunc)
+							 ps->pUSB->lockunlockFunc(ps->pUSB->dev,0) ;
 					}
 					if (ps->buff_unitSize < bytesRead) {
 						DBGOUT("reap: size over (size=%d)\n",bytesRead) ;
@@ -206,7 +220,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						}
 						#if 1
 						if(ERROR_SEM_TIMEOUT == dRet) { //# timeout
-						    break;  //# looking forward to the next time...
+							break;  //# looking forward to the next time...
 						}
 						#endif
 						//# failed
@@ -324,9 +338,13 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					pContext->ol.hEvent = ps->hTsEvents[si];
 					lnTransfered = 0;
 					ResetEvent(pContext->ol.hEvent);
+					if(ps->pUSB->lockunlockFunc)
+						 ps->pUSB->lockunlockFunc(ps->pUSB->dev,1) ;
 					bRet = WinUsb_ReadPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
 						buffer, ps->buff_unitSize, &lnTransfered, &(pContext->ol));
 					dRet = GetLastError();
+					if(ps->pUSB->lockunlockFunc)
+						ps->pUSB->lockunlockFunc(ps->pUSB->dev,0) ;
 					if (FALSE == bRet && ERROR_IO_PENDING != dRet) {
 						DBGOUT("submit: error (code=%d, size=%d)\n",dRet,lnTransfered) ;
 						warn_info(dRet, "submitURB failed");
@@ -459,12 +477,22 @@ int tsthread_create( tsthread_ptr* const tptr,
 
 	//# USB endpoint
 	WinUsb_ResetPipe( pusbep->fd, pusbep->endpoint & 0xFF );
-	i = 0x01;
-	WinUsb_SetPipePolicy( pusbep->fd, pusbep->endpoint & 0xFF, RAW_IO, sizeof( UCHAR ), &i );
-	WinUsb_SetPipePolicy( pusbep->fd, pusbep->endpoint & 0xFF, AUTO_CLEAR_STALL, sizeof( UCHAR ), &i );
-	//WinUsb_SetPipePolicy( pusbep->fd, pusbep->endpoint & 0xFF, ALLOW_PARTIAL_READS, sizeof( UCHAR ), &i );
-	//WinUsb_SetPipePolicy( pusbep->fd, pusbep->endpoint & 0xFF, IGNORE_SHORT_PACKETS, sizeof( UCHAR ), &i );
-	//WinUsb_SetPipePolicy( pusbep->fd, pusbep->endpoint & 0xFF, SHORT_PACKET_TERMINATE, sizeof( UCHAR ), &i );
+	#define SETUSBPIPEPOLICY_BOOL(name) do { UCHAR v=(DWORD)USBPIPEPOLICY_##name?1:0; \
+		WinUsb_SetPipePolicy( pusbep->fd, \
+			pusbep->endpoint & 0xFF, name,  sizeof( UCHAR ), &v ); }while(0)
+	#define SETUSBPIPEPOLICY_DWORD(name) do { DWORD v=(DWORD)USBPIPEPOLICY_##name; \
+		WinUsb_SetPipePolicy( pusbep->fd, \
+			pusbep->endpoint & 0xFF, name,  sizeof( DWORD ), &v ); }while(0)
+	SETUSBPIPEPOLICY_BOOL(RAW_IO);
+	SETUSBPIPEPOLICY_BOOL(AUTO_CLEAR_STALL);
+	SETUSBPIPEPOLICY_BOOL(ALLOW_PARTIAL_READS);
+	SETUSBPIPEPOLICY_BOOL(AUTO_FLUSH);
+	SETUSBPIPEPOLICY_BOOL(IGNORE_SHORT_PACKETS);
+	SETUSBPIPEPOLICY_BOOL(SHORT_PACKET_TERMINATE);
+	SETUSBPIPEPOLICY_DWORD(PIPE_TRANSFER_TIMEOUT);
+	SETUSBPIPEPOLICY_BOOL(RESET_PIPE_ON_RESUME);
+	#undef SETUSBPIPEPOLICY_BOOL
+	#undef SETUSBPIPEPOLICY_DWORD
 
 	#ifdef _DEBUG
 
@@ -588,7 +616,7 @@ int tsthread_readable(const tsthread_ptr tptr)
 	j= ps->buff_pop;
 	if(0 > j || ps->buff_num <= j) {  //# bug check
 		warn_info(j,"ts.buff_pop Out of range");
-	    j = -1;
+		j = -1;
 	}
 	else do {  //# skip empty blocks
 		if(!ps->actual_length[j]) {

@@ -139,5 +139,5 @@
 
   シェルを起動しカレントディレクトリをFSHybridフォルダに移し、以下のコマンドを実行してパッチを完了させる
 
-  patch -p1 < BonD_FSHybrid_20191222_mod_xxxxxxxx.patch.diff
+  patch -p1 --binary < BonD_FSHybrid_20191222_mod_xxxxxxxx.patch.diff
 

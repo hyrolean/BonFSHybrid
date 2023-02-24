@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "em2874.h"
+#include "message.h"
 #include <setupapi.h>
 #include <strsafe.h>
 
@@ -12,15 +13,10 @@ inline uint8_t ICC_checkSum (const uint8_t* data, int len)
 	return sum;
 }
 
-inline void milliWait( int s )
-{
-	::Sleep(s);
-}
-
 unsigned EM2874Device::UserSettings = 0x1;
 
 EM2874Device::EM2874Device ()
-: dev(NULL), usbHandle(NULL), isCardReady(false)
+: dev(NULL), usbHandle(NULL), isCardReady(false), pmutex(NULL)
 #ifdef EM2874_TS
 , hTsEvent(NULL), TsBuffSize(NULL)
 #endif
@@ -32,7 +28,7 @@ EM2874Device::EM2874Device ()
 }
 
 EM2874Device::EM2874Device(HANDLE hDev)
-: dev(hDev), usbHandle(NULL), isCardReady(false)
+: dev(hDev), usbHandle(NULL), isCardReady(false), pmutex(NULL)
 #ifdef EM2874_TS
 , hTsEvent(NULL), TsBuffSize(NULL)
 #endif
@@ -62,6 +58,10 @@ EM2874Device::~EM2874Device ()
 			writeReg(0x0C, 0x0);
 		}
 	}
+	if(pmutex) {
+		uthread_mutex_destroy(pmutex);
+		pmutex=NULL;
+	}
 }
 
 EM2874Device* EM2874Device::AllocDevice(HANDLE hDev, HANDLE hUsbDev)
@@ -83,7 +83,12 @@ bool EM2874Device::initDevice (HANDLE hUsbDev)
 
 	if (!hUsbDev) return false;
 
-    usbHandle = hUsbDev ;
+	usbHandle = hUsbDev ;
+
+	if(int ret = uthread_mutex_init(&pmutex)) {
+		warn_info(ret,"failed");
+		return false;
+	}
 
 	if( readReg(EM28XX_REG_GPIO, &val) && writeReg(EM28XX_REG_GPIO, val & ~0x1U)
 	){
@@ -131,16 +136,105 @@ bool EM2874Device::initDevice2 ()
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, ~0xc1U & val );
 
-	milliWait(70);
+	miliWait(70);
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, 0x40U | val );
 	readReg(EM28XX_REG_GPIO, &val);
 	writeReg( EM28XX_REG_GPIO, 0x7eU | val );
-	milliWait(3);
+	miliWait(3);
 	::WinUsb_SetCurrentAlternateSetting( usbHandle, 1 );
 
 	return true;
 }
+
+BOOL EM2874Device::DoUSBCtrlTransfer(
+  WINUSB_SETUP_PACKET     SetupPacket,
+  PUCHAR                  Buffer,
+  ULONG                   BufferLength,
+  PULONG                  LengthTransferred,
+  LPOVERLAPPED            Overlapped,
+  DWORD                   &LastError
+)
+{
+	if(int r = uthread_mutex_lock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_lock failed");
+		return FALSE;
+	}
+	BOOL res = WinUsb_ControlTransfer(
+		usbHandle,
+		SetupPacket,
+		Buffer,
+		BufferLength,
+		LengthTransferred,
+		Overlapped
+	);
+	LastError = GetLastError() ;
+	if(int r = uthread_mutex_unlock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_unlock failed");
+		return FALSE;
+	}
+	return res ;
+}
+
+#ifdef EM2874_TS
+BOOL EM2874Device::DoUSBReadPipe(
+  PUCHAR                  Buffer,
+  ULONG                   BufferLength,
+  PULONG                  LengthTransferred,
+  LPOVERLAPPED            Overlapped,
+  DWORD                   &LastError
+)
+{
+	if(int r = uthread_mutex_lock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_lock failed");
+		return FALSE;
+	}
+	BOOL res = WinUsb_ReadPipe(
+		usbHandle, EM2874_EP_TS1,
+		Buffer,
+		BufferLength,
+		LengthTransferred,
+		Overlapped
+	);
+	LastError = GetLastError() ;
+	if(int r = uthread_mutex_unlock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_unlock failed");
+		return FALSE;
+	}
+	return res ;
+}
+
+BOOL EM2874Device::DoUSBGetOverlappedResult(
+  LPOVERLAPPED            Overlapped,
+  LPDWORD                 NumberOfBytesTransferred,
+  BOOL                    Wait,
+  DWORD                   &LastError
+)
+{
+	if(int r = uthread_mutex_lock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_lock failed");
+		return FALSE;
+	}
+	BOOL res = WinUsb_GetOverlappedResult(
+		usbHandle,
+		Overlapped,
+		NumberOfBytesTransferred,
+		Wait
+	);
+	LastError = GetLastError() ;
+	if(int r = uthread_mutex_unlock(pmutex)) {
+		LastError = GetLastError() ;
+		warn_info(r,"mutex_unlock failed");
+		return FALSE;
+	}
+	return res ;
+}
+#endif
 
 uint8_t EM2874Device::readReg (const uint8_t idx)
 {
@@ -157,10 +251,10 @@ bool EM2874Device::readReg (const uint8_t idx, uint8_t *val)
 	spkt.Index = idx;
 	spkt.Length = 1;
 
-	ULONG ret;
-	BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)val, 1, &ret, NULL );
+	ULONG ret; DWORD err ;
+	BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)val, 1, &ret, NULL , err );
 	if( !bRet ) {
-		DBG_INFO ( "readReg LastError=%08x\n", GetLastError() );
+		DBG_INFO ( "readReg LastError=%08x\n", err );
 	}
 	return (ret == 1) && bRet;
 }
@@ -173,10 +267,10 @@ bool EM2874Device::writeReg (const uint8_t idx, const uint8_t val)
 	spkt.Index = idx;
 	spkt.Length = 1;
 
-	ULONG ret;
-	BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)&val, 1, &ret, NULL );
+	ULONG ret; DWORD err ;
+	BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)&val, 1, &ret, NULL , err );
 	if( !bRet ) {
-		DBG_INFO ( "writeReg LastError=%08x\n", GetLastError() );
+		DBG_INFO ( "writeReg LastError=%08x\n", err );
 	}
 	return (ret == 1) && bRet;
 }
@@ -190,10 +284,10 @@ bool EM2874Device::readI2C (const uint8_t addr, const uint16_t size, uint8_t *da
 	spkt.Index = addr;
 	spkt.Length = size;
 
-	ULONG ret;
-	BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)data, spkt.Length, &ret, NULL );
+	ULONG ret; DWORD err ;
+	BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)data, spkt.Length, &ret, NULL , err );
 	if( !bRet ) {
-		DBG_INFO ( "readI2C LastError=%08x\n", GetLastError() );
+		DBG_INFO ( "readI2C LastError=%08x\n", err );
 		return false;
 	}
 	readReg( 0x05, (uint8_t*)&ret );
@@ -213,10 +307,10 @@ bool EM2874Device::writeI2C (const uint8_t addr, const uint16_t size, uint8_t *d
 	spkt.Index = addr;
 	spkt.Length = size;
 
-	ULONG ret;
-	BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)data, spkt.Length, &ret, NULL );
+	ULONG ret; DWORD err;
+	BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)data, spkt.Length, &ret, NULL, err );
 	if( !bRet ) {
-		DBG_INFO ( "writeI2C LastError=%08x\n", GetLastError() );
+		DBG_INFO ( "writeI2C LastError=%08x\n", err );
 		return false;
 	}
 	readReg( 0x05, (uint8_t*)&ret );
@@ -245,7 +339,7 @@ bool EM2874Device::resetICC_2 ()
 
 	DBG_INFO ( "ICC ready\n" );
 	readICC( &rlen, rbuff );
-	milliWait(1);
+	miliWait(1);
 
 	WINUSB_SETUP_PACKET spkt;
 	::ZeroMemory ( &spkt, sizeof(spkt) );
@@ -254,24 +348,25 @@ bool EM2874Device::resetICC_2 ()
 	spkt.Index = 0x200;
 
 	static UCHAR cmd[] = { 0x00, 0xc1, 0x01, 0xfe, 0x3e };
-	ULONG ret;
+	ULONG ret; DWORD err;
 	spkt.Length = sizeof(cmd);
-	BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, cmd, sizeof(cmd), &ret, NULL );
+	BOOL bRet = DoUSBCtrlTransfer ( spkt, cmd, sizeof(cmd), &ret, NULL, err );
 	if( !bRet ) {
-		DBG_INFO ( "writeICC LastError=%08x\n", GetLastError() );
+		DBG_INFO ( "writeICC LastError=%08x\n", err );
 		return false;
 	}
 
 	writeReg( EM2874_REG_CAS_MODE2, 0);
 	writeReg( EM2874_REG_CAS_STATUS, 0x80 );
 
-	milliWait(100);
+	miliWait(100);
 	writeReg( EM2874_REG_CAS_DATALEN, 5 );
 	if(waitICC() < 0) return false;
 
 	spkt.RequestType = 0xc0;
 	spkt.Index = 0;
-	bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, rbuff, 4, &ret, NULL );
+	DWORD err;
+	bRet = DoUSBCtrlTransfer ( spkt, rbuff, 4, &ret, NULL, err );
 	if( !bRet || rbuff[1] != 0xe1 || rbuff[3] != 0xfe )
 		return false;
 	cardPCB = 0;
@@ -316,10 +411,11 @@ bool EM2874Device::writeICC ( const size_t size, const void *data )
 		spkt.Index = 0x200 + i;
 		spkt.Length = (val - i) > 64 ? 64 : (val - i);
 
-		BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)(cardBuf+i)
-			, spkt.Length, &ret, NULL );
+		DWORD err;
+		BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)(cardBuf+i)
+			, spkt.Length, &ret, NULL, err );
 		if( !bRet ) {
-			DBG_INFO ( "writeICC LastError=%08x\n", GetLastError() );
+			DBG_INFO ( "writeICC LastError=%08x\n", err );
 			return false;
 		}
 	}
@@ -329,7 +425,7 @@ bool EM2874Device::writeICC ( const size_t size, const void *data )
 	readReg( EM2874_REG_CAS_STATUS, &val );
 	//DBG_INFO("Wr r70 %02X\n",val);
 	writeReg( EM2874_REG_CAS_DATALEN, size + 4 );
-	milliWait(1);
+	miliWait(1);
 	return true;
 }
 
@@ -352,10 +448,11 @@ bool EM2874Device::readICC ( size_t *size, void *data )
 		spkt.Index = i;
 		spkt.Length = (val - i) > 64 ? 64 : (val - i);
 
-		BOOL bRet = ::WinUsb_ControlTransfer ( usbHandle, spkt, (PUCHAR)(cardBuf+i)
-			, spkt.Length, &ret, NULL );
+		DWORD err;
+		BOOL bRet = DoUSBCtrlTransfer ( spkt, (PUCHAR)(cardBuf+i)
+			, spkt.Length, &ret, NULL, err );
 		if( !bRet ) {
-			DBG_INFO ( "readICC LastError=%08x\n", GetLastError() );
+			DBG_INFO ( "readICC LastError=%08x\n", err );
 			return false;
 		}
 	}
@@ -368,7 +465,7 @@ int EM2874Device::waitICC ()
 	uint8_t val;
 	int i;
 	for(i = 0; i < 40; i++) {
-		milliWait(8);
+		miliWait(8);
 		if(!readReg(EM2874_REG_CAS_STATUS, &val))
 			continue;
 		if( val == 5 ) {
@@ -525,21 +622,21 @@ bool EM2874Device::BeginAsyncRead()
 	::ZeroMemory(&IoContext[OverlappedIoIndex].ol, sizeof(OVERLAPPED));
 	IoContext[OverlappedIoIndex].ol.hEvent = hTsEvent;
 
-	BOOL bRet ;
+	BOOL bRet ; DWORD err ;
 	if(WriteBackEnabled()) {
 	    IoContext[OverlappedIoIndex].index = OverlappedIoIndex ;
 		void *buffer = WBack.begin_func(OverlappedIoIndex, USBBULK_XFERSIZE, WBack.arg) ;
 		if(!buffer) return false ;
-		bRet = ::WinUsb_ReadPipe ( usbHandle, EM2874_EP_TS1, (BYTE*)buffer, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol );
+		bRet = DoUSBReadPipe ( (BYTE*)buffer, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol, err );
 	}else if(TsBuff) {
 		dRet = TsBuffIndex ;
 		TsBuffIndex = (dRet < (RINGBUFF_SIZE-1)) ? dRet + 1 : 0;
 		TsBuffSize[dRet] = -1;
 		IoContext[OverlappedIoIndex].index = dRet;
-		bRet = ::WinUsb_ReadPipe ( usbHandle, EM2874_EP_TS1, TsBuff + dRet*USBBULK_XFERSIZE, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol );
+		bRet = DoUSBReadPipe ( TsBuff + dRet*USBBULK_XFERSIZE, USBBULK_XFERSIZE, NULL, &IoContext[OverlappedIoIndex].ol, err );
 	}else return false ;
 #if 0
-	dRet = ::GetLastError();
+	dRet = err ;
 	if( bRet == FALSE && dRet != ERROR_IO_PENDING ) DBG_INFO ("ReadP=%u ",dRet);
 	if( bRet ) {
 		DBG_INFO ("ReadPs=%u ",dRet);
@@ -555,10 +652,9 @@ bool EM2874Device::BeginAsyncRead()
 int EM2874Device::GetOverlappedResult()
 {
 	if(hTsEvent == NULL) return -2;
-	ULONG bytesRead = 0;
-	if(FALSE == ::WinUsb_GetOverlappedResult ( usbHandle, &IoContext[OverlappedIoIndex].ol, &bytesRead, FALSE )) {
-		DWORD dwRet = ::GetLastError();
-		switch(dwRet) {
+	ULONG bytesRead = 0; DWORD err ;
+	if(FALSE == DoUSBGetOverlappedResult ( &IoContext[OverlappedIoIndex].ol, &bytesRead, FALSE, err )) {
+		switch(err) {
 			case ERROR_SEM_TIMEOUT:
 			case ERROR_OPERATION_ABORTED:
 				DBG_INFO ("RdAbort%u ",bytesRead);
@@ -603,6 +699,19 @@ int EM2874Device::USBEndPointStartStopFunc(void * const  dev, const int start)
 	return 0 ;
 }
 
+int EM2874Device::USBEndPointLockUnlockFunc(void * const  dev, const int lock)
+{
+	EM2874Device *this_ = static_cast<EM2874Device*>(dev) ;
+	int r ;
+	if(lock) {
+		r = uthread_mutex_lock(this_->pmutex) ;
+	}else {
+		r = uthread_mutex_unlock(this_->pmutex) ;
+	}
+	if(r) warn_info(r,"failed");
+	return r;
+}
+
 void EM2874Device::SetupUSBEndPoint(usb_endpoint_st *usb_ep)
 {
 	usb_ep->dev=this ;
@@ -610,6 +719,7 @@ void EM2874Device::SetupUSBEndPoint(usb_endpoint_st *usb_ep)
 	usb_ep->endpoint=EM2874_EP_TS1 ;
 	usb_ep->xfer_size=USBBULK_XFERSIZE ;
 	usb_ep->startstopFunc = USBEndPointStartStopFunc;
+	usb_ep->lockunlockFunc = USBEndPointLockUnlockFunc;
 }
 
 void EM2874Device::CleanupUSBEndPoint(usb_endpoint_st *usb_ep)
@@ -622,6 +732,7 @@ void EM2874Device::CleanupUSBEndPoint(usb_endpoint_st *usb_ep)
 		usb_ep->endpoint = 0;
 		usb_ep->xfer_size = 0;
 		usb_ep->startstopFunc = NULL;
+		usb_ep->lockunlockFunc = NULL ;
 	}
 }
 

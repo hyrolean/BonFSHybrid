@@ -1,6 +1,9 @@
 #pragma once
 
 #include <WinUSB.h>
+extern "C" {
+#include "osdepend.h"
+}
 
 typedef unsigned char	uint8_t;
 typedef unsigned short	uint16_t;
@@ -31,9 +34,9 @@ typedef signed int		int32_t;
 //#define EM2874_TS
 
 #ifdef EM2874_TS
-    #define USBBULK_XFERSIZE	(0xBC00)
-    #define RINGBUFF_SIZE	48
-    #define NUM_IOHANDLE	36
+	#define USBBULK_XFERSIZE	(0xBC00)
+	#define RINGBUFF_SIZE	48
+	#define NUM_IOHANDLE	36
 #endif
 
 #define EM2874_USBEP
@@ -43,13 +46,13 @@ extern "C" {
 #include "types_u.h"
 #include "tsbuff.h"
 }
-    #define USBBULK_XFERSIZE	TS_PacketSize
+	#define USBBULK_XFERSIZE	TS_PacketSize
 #endif
 
 
 typedef struct _TSIO_CONTEXT {
 
-    OVERLAPPED ol;
+	OVERLAPPED ol;
 	unsigned index;
 
 } TSIO_CONTEXT;
@@ -75,7 +78,33 @@ private:
 	WINUSB_INTERFACE_HANDLE usbHandle;
 	uint8_t cardPCB;
 
+	PMUTEX pmutex;
+
+	BOOL DoUSBCtrlTransfer(
+	  WINUSB_SETUP_PACKET     SetupPacket,
+	  PUCHAR                  Buffer,
+	  ULONG                   BufferLength,
+	  PULONG                  LengthTransferred,
+	  LPOVERLAPPED            Overlapped,
+	  DWORD                   &LastError
+	);
+
 #ifdef EM2874_TS
+	BOOL DoUSBReadPipe(
+	  PUCHAR                  Buffer,
+	  ULONG                   BufferLength,
+	  PULONG                  LengthTransferred,
+	  LPOVERLAPPED            Overlapped,
+	  DWORD                   &LastError
+	);
+
+	BOOL DoUSBGetOverlappedResult(
+	  LPOVERLAPPED            Overlapped,
+	  LPDWORD                 NumberOfBytesTransferred,
+	  BOOL                    Wait,
+	  DWORD                   &LastError
+	);
+
 	bool BeginAsyncRead();
 	int GetOverlappedResult();
 
@@ -85,7 +114,7 @@ private:
 	int OverlappedIoIndex;
 	HANDLE hTsEvent;
 	TSIO_CONTEXT IoContext[NUM_IOHANDLE];
-    write_back_t WBack ;
+	write_back_t WBack ;
 	DWORD dwtLastRead;
 #endif
 
@@ -116,19 +145,20 @@ public:
 
 #ifdef EM2874_TS
 	bool WriteBackEnabled() ;
-    void SetBuffer(void *pBuf, const struct write_back_t * const pWBack=NULL);
+	void SetBuffer(void *pBuf, const struct write_back_t * const pWBack=NULL);
 	bool TransferStart();
 	void TransferStop();
 	void TransferPause();
 	void TransferResume();
 	int DispatchTSRead();
 	HANDLE GetHandle();
-    int GetTsBuffIndex();
+	int GetTsBuffIndex();
 #endif
 
 #ifdef EM2874_USBEP
-    static int USBEndPointStartStopFunc(void * const  dev, const int start);
-    void SetupUSBEndPoint(usb_endpoint_st *usb_ep) ;
-    void CleanupUSBEndPoint(usb_endpoint_st *usb_ep) ;
+	static int USBEndPointStartStopFunc(void * const  dev, const int start);
+	static int USBEndPointLockUnlockFunc(void * const  dev, const int lock);
+	void SetupUSBEndPoint(usb_endpoint_st *usb_ep) ;
+	void CleanupUSBEndPoint(usb_endpoint_st *usb_ep) ;
 #endif
 };

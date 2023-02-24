@@ -264,6 +264,7 @@ int em287x_create(em287x_state* const  state, struct usb_endpoint_st * const pus
 	pusbep->endpoint = EP_TS1;
 	pusbep->dev = st;
 	pusbep->startstopFunc = em287x_startstopStream;
+	pusbep->lockunlockFunc = em287x_lockunlockMutex;
 	st->chip_id = 0;
 	st->fd = pusbep->fd;
 	if(( ret = usb_claim(st->fd, 0) )) {
@@ -350,6 +351,21 @@ int em287x_startstopStream(const em287x_state state, const int start)
 	return 0;
 }
 
+int em287x_lockunlockMutex(const em287x_state state, const int lock)
+{
+	int r = 0;
+	struct state_st* const s = state;
 
+	if(lock) {
+		if((r = uthread_mutex_lock(s->pmutex))) goto err1 ;
+	}else {
+		if((r = uthread_mutex_unlock(s->pmutex))) goto err1 ;
+	}
+
+	return 0;
+err1:
+	warn_info(r,"failed");
+	return r;
+}
 
 /*EOF*/

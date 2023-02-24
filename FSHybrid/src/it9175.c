@@ -709,7 +709,9 @@ int it9175_create(it9175_state* const  state, struct usb_endpoint_st * const pus
 		return -2;
 	}
 	pusbep->endpoint = EP_TS1;
+	pusbep->dev = st ;
 	pusbep->startstopFunc = NULL;
+	pusbep->lockunlockFunc = it9175_lockunlockMutex;
 	pusbep->xfer_size = TS_PacketSize;
 	st->chip_id = 0;
 	st->fd = pusbep->fd;
@@ -942,6 +944,37 @@ int it9175_readStatistic(const it9175_state state, uint8_t* const data)
 
 	return 0;
 err1:
+	return ret;
+}
+
+int it9175_readSNRatio(const it9175_state state, uint8_t* const dB)
+{
+	int ret = 0;
+	struct state_st* const st = state;
+	uint8_t rbuf[1];
+	//# S/N Ratio (dB)
+	if((ret = readRegs(st, 0x8001c9, rbuf, 1))) goto err1;
+	dB[0] = *rbuf;
+
+	return 0;
+err1:
+	return ret;
+}
+
+int it9175_lockunlockMutex(const it9175_state state, const int lock)
+{
+	int ret = 0;
+	struct state_st* const st = state;
+
+	if(lock) {
+		if((ret = uthread_mutex_lock(st->pmutex))) goto err1 ;
+	}else {
+		if((ret = uthread_mutex_unlock(st->pmutex))) goto err1 ;
+	}
+
+	return 0;
+err1:
+	warn_info(ret,"failed");
 	return ret;
 }
 

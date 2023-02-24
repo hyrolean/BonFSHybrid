@@ -1,4 +1,4 @@
-BonDriver_FSUSB2N.dll MOD @ 2019/12/22
+BonDriver_FSUSB2N.dll MOD @ 2020/4/27
 
 ■オリジナル版から新たに追加した機能
 
@@ -20,6 +20,10 @@ BonDriver_FSUSB2N.dll MOD @ 2019/12/22
 
 
 ■更新履歴
+
+2019/12/22 からの変更点
+
+  ・シグナル取得処理の最適化
 
 2019/12/8 からの変更点
 

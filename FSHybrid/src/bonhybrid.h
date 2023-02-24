@@ -17,7 +17,7 @@ extern "C" {
 
 #define SPACE_CHASFREQ  114514
 
-
+namespace BonHybrid {
 
 class IValueLoader
 {
@@ -106,7 +106,7 @@ public: // inherited
 	virtual const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel) {return FALSE;}
 
 protected:
-	CBonFSHybrid();
+	CBonFSHybrid(bool hasSatellite=false);
 	virtual ~CBonFSHybrid();
 
 protected:
@@ -132,9 +132,13 @@ public:
 
 template<class T> IBonDriver *BonFSCreate() {
 	if(T::m_pThis) return static_cast<IBonDriver*>(T::m_pThis) ;
-	if(T *bon = new T) { bon->Initialize() ; return bon ; }
+	if(T *bon = new T) { bon->Initialize() ; return static_cast<IBonDriver*>(bon) ; }
 	return 0 ;
 }
+
+} // End of namespace BonHybrid
+
+using namespace BonHybrid ;
 
 //===========================================================================
 #endif // _BONHYBRID_20191229125131957_H_INCLUDED_

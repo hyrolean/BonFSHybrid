@@ -614,7 +614,7 @@ skip_frac:
 
 int tc90522_readStatistic(void * const state, const unsigned devnum, unsigned* const data)
 {
-	int ret;
+	int ret=0;
 	struct state_st* const s = state;
 	struct i2c_device_st* const  dev = &(s->i2c_dev[devnum]);
 	unsigned uval;
@@ -624,6 +624,7 @@ int tc90522_readStatistic(void * const state, const unsigned devnum, unsigned* c
 		warn_info(0,"invalid device %u", devnum);
 		return -2;
 	}
+
 	if(devnum & 1) {  //# sate
 		//# status
 		if(( ret = readReg(dev, 0xc3, &utmp ) ))  goto err1;
@@ -671,9 +672,9 @@ int tc90522_readStatistic(void * const state, const unsigned devnum, unsigned* c
 		}
 	}
 
-	return 0;
 err1:
-	warn_info(ret,"failed");
+
+	if(ret) warn_info(ret,"failed");
 	return ret;
 }
 

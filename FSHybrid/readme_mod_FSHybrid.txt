@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/1/12
+BonDriver_FSHybrid.dll MOD @ 2020/4/27
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -16,7 +16,7 @@ BonDriver_FSHybrid.dll MOD @ 2020/1/12
   BonDriver_FSHybrid.dll
   → BonDriver_FSUSB2i.dll / BonDriver_FSUSB2ixxxxxx.dll ※
 
-    FSUSB2/V3 用 BonDriver として動作
+    FSUSB2/V3、または、FSMINI 用 BonDriver として動作
 
       取扱説明書 : readme_mod_FSUSB2i.txt
 
@@ -33,6 +33,11 @@ BonDriver_FSHybrid.dll MOD @ 2020/1/12
 
 
 ■更新履歴
+
+2020/1/12 からの変更点
+
+  ・dBが良くてもなぜかとりこぼす謎のプチドロップ現象の根本的な問題を修正
+   （WinUsbのパイプ読出し系統の処理を排他で行う仕組みのコードを追加して対応）
 
 2020/1/3 からの変更点
 

@@ -1,0 +1,16 @@
+diff -uPr BonD_FSHybrid-20191222_mod5.1/src/BonDriver_FSUSB2N/BonTuner_FSUSB2N.cpp BonD_FSHybrid-20191222_mod5.2/src/BonDriver_FSUSB2N/BonTuner_FSUSB2N.cpp
+--- BonD_FSHybrid-20191222_mod5.1/src/BonDriver_FSUSB2N/BonTuner_FSUSB2N.cpp	2020-05-22 18:52:02.000000000 +0900
++++ BonD_FSHybrid-20191222_mod5.2/src/BonDriver_FSUSB2N/BonTuner_FSUSB2N.cpp	2020-06-19 15:22:12.000000000 +0900
+@@ -105,10 +105,10 @@
+ void CBonTuner::CloseTuner()
+ {
+ 
+-	if(usbDev) usbDev->CleanupUSBEndPoint(&m_USBEP);
+-
+ 	FifoFinalize() ;
+ 
++	if(usbDev) usbDev->CleanupUSBEndPoint(&m_USBEP);
++
+ 	if(pDev) {
+ 		delete pDev;
+ 		pDev = NULL;

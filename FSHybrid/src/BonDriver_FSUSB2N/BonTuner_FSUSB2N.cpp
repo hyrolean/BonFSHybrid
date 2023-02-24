@@ -105,9 +105,9 @@ const BOOL CBonTuner::OpenTuner()
 void CBonTuner::CloseTuner()
 {
 
-	if(usbDev) usbDev->CleanupUSBEndPoint(&m_USBEP);
-
 	FifoFinalize() ;
+
+	if(usbDev) usbDev->CleanupUSBEndPoint(&m_USBEP);
 
 	if(pDev) {
 		delete pDev;

@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/5/22
+BonDriver_FSHybrid.dll MOD @ 2020/6/20
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -36,7 +36,6 @@ BonDriver_FSHybrid.dll MOD @ 2020/5/22
 
 2020/4/27 からの変更点
 
-  ・チャンネルチューニングに関するFSUSB2N系統のパラメタを微調整  
   ・iniファイルに以下の三系統のシグナル取得時排他に関わるフラグを追加
   
      FSUSB2N_LOCK_ON_SIGNAL / FSUSB2I_LOCK_ON_SIGNAL / USUNPTV_LOCK_ON_SIGNAL

@@ -10,7 +10,7 @@
 class KtvDevice {
 public:
 	KtvDevice (EM2874Device *pDev);
-	~KtvDevice();
+	virtual ~KtvDevice();
 
 	virtual void InitTuner () = 0;
 	virtual void SetFrequency (unsigned int freq_khz) = 0;
@@ -41,7 +41,7 @@ class Ktv1Device : public KtvDevice
 {
 public:
 	Ktv1Device (EM2874Device *pDev);
-	~Ktv1Device();
+	virtual ~Ktv1Device();
 
 	void InitTuner ();
 	void SetFrequency (unsigned int freq_khz);
@@ -63,7 +63,7 @@ class Ktv2Device : public KtvDevice
 {
 public:
 	Ktv2Device (EM2874Device *pDev);
-	~Ktv2Device();
+	virtual ~Ktv2Device();
 
 	void InitTuner ();
     bool SleepTuner();

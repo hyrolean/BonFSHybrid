@@ -18,6 +18,6 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 
 #pragma warning( disable : 4273 )
 extern "C" __declspec(dllexport) IBonDriver * CreateBonDriver()
-{return (CBonTuner::m_pThis)?CBonTuner::m_pThis:((IBonDriver*) new CBonTuner);}
+{return BonFSCreate<CBonTuner>();}
 #pragma warning( default : 4273 )
 

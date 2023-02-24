@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/1/3
+BonDriver_FSHybrid.dll MOD @ 2020/1/12
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,13 @@ BonDriver_FSHybrid.dll MOD @ 2020/1/3
 
 
 ■更新履歴
+
+2020/1/3 からの変更点
+
+  ・iniファイルから設定を読み込める機能を追加
+    (サンプルとしてBonDriver_FSHybrid.iniを添付)
+
+  ・デバイスの初期化に失敗した場合は既定で最大３回まで再試行する仕様に変更
 
 2019/12/23 からの変更点
 

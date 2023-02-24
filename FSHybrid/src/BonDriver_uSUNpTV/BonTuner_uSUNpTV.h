@@ -18,8 +18,10 @@ namespace uSUNpTV {
 
 class CBonTuner : public CBonFSHybrid
 {
-private:
+protected:
+	const TCHAR *RegName() ;
 	int UserDecidedDeviceIdx() ;
+	virtual void LoadValues(const IValueLoader *Loader);
 
 public:
 	CBonTuner();
@@ -46,6 +48,7 @@ public:
 protected:
 	DWORD m_dwCurSpace;
 	DWORD m_dwCurChannel;
+    BOOL m_hasStream;
 	CHANNEL m_chCur ;
 
 	HANDLE m_hDev;
@@ -56,8 +59,6 @@ protected:
 	void* tunerDev[2];
 	int m_selectedTuner;
 
-public:
-	void ReadRegMode (HKEY hPKey);
 };
 
 } // End of namespace uSUNpTV

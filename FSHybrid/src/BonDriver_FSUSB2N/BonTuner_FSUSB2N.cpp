@@ -17,13 +17,17 @@ CBonTuner::CBonTuner()
   m_hDev(NULL), m_hUsbDev(NULL)
 {
 	ZeroMemory(&m_USBEP, sizeof m_USBEP);
-	LoadData(this,g_RegKey);
 }
 
 CBonTuner::~CBonTuner()
 {
 	// äJÇ©ÇÍÇƒÇÈèÍçáÇÕï¬Ç∂ÇÈ
 	CloseTuner();
+}
+
+const TCHAR *CBonTuner::RegName()
+{
+	return g_RegKey ;
 }
 
 int CBonTuner::UserDecidedDeviceIdx()
@@ -194,12 +198,12 @@ const DWORD CBonTuner::GetCurChannel(void)
 	return m_dwCurChannel;
 }
 
-void CBonTuner::ReadRegMode (HKEY hPKey)
+void CBonTuner::LoadValues(const IValueLoader *Loader)
 {
 	DWORD FunctionMode = DWORD(EM2874Device::UserSettings&0xffff) | DWORD(KtvDevice::UserSettings)<<16 ;
 
-	CBonFSHybrid::ReadRegMode (hPKey) ;
-	#define LOADDW(val) do { val = RegReadDword(hPKey,L#val,val); } while(0)
+	CBonFSHybrid::LoadValues (Loader) ;
+	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
 	LOADDW(FunctionMode);
 	LOADDW(FSUSB2N_INTERIM_WAIT);
 	LOADDW(FSUSB2N_SETFREQ_TIMES);

@@ -3,11 +3,16 @@
 //---------------------------------------------------------------------------
 
 #include <string>
+#include <iterator>
 #include "bonhybrid.h"
 #include "usbdevfile.h"
 //---------------------------------------------------------------------------
 
 using namespace std;
+
+#define UNITEDINIFILENAME "BonDriver_FSHybrid.ini"
+#define INIVALUELOADER_SECTION "BonTuner"
+#define INICHANNELS_SECTION "Channels"
 
 // 有効にするとtrinity19683さん直伝のキャッシュ方式に変更
 BOOL TSCACHING_LEGACY = FALSE ;
@@ -16,44 +21,106 @@ BOOL TSCACHING_DEFRAGMENT = FALSE ;
 // キャッシュを整合化する場合のパケットサイズ
 DWORD TSCACHING_DEFRAGSIZE = 128*1024 ; // 128K(Spinelに最適)
 
-DWORD ASYNCTS_QUEUENUM    = 66  ; // Default 3M (47K*66) bytes
-DWORD ASYNCTS_QUEUEMAX    = 660 ; // Maximum growth 30M (47K*660) bytes
-DWORD ASYNCTS_EMPTYBORDER = 22  ; // Empty border at least 1M (47K*22) bytes
-DWORD ASYNCTS_EMPTYLIMIT  = 11  ; // Empty limit at least 0.5M (47K*11) bytes
-#define TSTHREADWAIT        TS_PollTimeout
-#define TSALLOCWAITING      false
-#define TSALLOCMODERATE     true
+// 非同期キャッシュの設定
+DWORD ASYNCTS_QUEUENUM     = 66  ; // Default 3M (47K*66) bytes
+DWORD ASYNCTS_QUEUEMAX     = 660 ; // Maximum growth 30M (47K*660) bytes
+DWORD ASYNCTS_EMPTYBORDER  = 22  ; // Empty border at least 1M (47K*22) bytes
+DWORD ASYNCTS_EMPTYLIMIT   = 11  ; // Empty limit at least 0.5M (47K*11) bytes
+const DWORD TSTHREADWAIT   = TS_PollTimeout ;
+const bool TSALLOCWAITING  = false ;
+const bool TSALLOCMODERATE = true ;
+
+// 既定のチャンネル情報にVHFを含めるかどうか
+BOOL DEFSPACE_VHF = FALSE ;
+// 既定のチャンネル情報にUHFを含めるかどうか
+BOOL DEFSPACE_UHF = TRUE ;
+// 既定のチャンネル情報にCATVを含めるかどうか
+BOOL DEFSPACE_CATV = FALSE ;
+// 既定のチャンネル情報にレジストリのチャンネル情報を含めるかどうか
+BOOL DEFSPACE_AUX = TRUE ;
+// 既定の三波チューナーチャンネル情報にBSを含めるかどうか
+BOOL DEFSPACE_BS = TRUE ;
+// 既定の三波チューナーBSチャンネルの各ストリーム数(0-8)
+DWORD DEFSPACE_BS_STREAMS = 8 ;
+// 既定の三波チューナーチャンネル情報にCS110を含めるかどうか
+BOOL DEFSPACE_CS110 = TRUE ;
+// 既定の三波チューナーCS110チャンネルの各ストリーム数(0-8)
+DWORD DEFSPACE_CS110_STREAMS = 8 ;
+// IBonDriverのSetChannelにユーザーチャンネルを使用するかどうか
+BOOL BYTETUNING_USER = FALSE ;
+
+// デバイス初期化に失敗した場合に再試行する最大回数
+DWORD DEVICE_RETRY_TIMES = 3 ;
 
 // Instance
 CBonFSHybrid* CBonFSHybrid::m_pThis = NULL;
 HINSTANCE CBonFSHybrid::m_hModule = NULL;
 
+
 //===========================================================================
-// Functions
+// Value Loaders
 //---------------------------------------------------------------------------
-DWORD RegReadDword(HKEY hKey,LPCTSTR name,DWORD defVal)
+class CRegValueLoader : public IValueLoader
 {
-	BYTE buf[sizeof DWORD] ;
-	DWORD rdSize = sizeof DWORD ;
-	DWORD type = 0 ;
-	if(ERROR_SUCCESS==RegQueryValueEx(
-	  hKey, name, 0, &type, buf, &rdSize )) {
-		if(type==REG_DWORD) {
-			DWORD result = *(DWORD*)(&buf[0]) ;
-			//TRACE(L"Mode: %s=%d\n",name,result) ;
-			DBGOUT("Mode: %s=%d\n",wcs2mbcs(name).c_str(),result);
-			return result ;
+	HKEY HKey ;
+public:
+	CRegValueLoader(HKEY hKey): HKey(hKey) {}
+	virtual DWORD ReadDWORD(const wstring name,DWORD defVal=0) const {
+		BYTE buf[sizeof DWORD] ;
+		DWORD rdSize = sizeof DWORD ;
+		DWORD type = 0 ;
+		if(ERROR_SUCCESS==RegQueryValueEx(
+		  HKey, name.c_str(), 0, &type, buf, &rdSize )) {
+			if(type==REG_DWORD) {
+				DWORD result = *(DWORD*)(&buf[0]) ;
+				DBGOUT("Mode: %s=%d\n",wcs2mbcs(name).c_str(),result);
+				return result ;
+			}
 		}
+		return defVal ;
 	}
-	return defVal ;
-}
+	virtual wstring ReadString(const wstring name,const wstring defStr) const {
+		const size_t MAX_BYTES = 1024 ;
+		BYTE buf[MAX_BYTES] ;
+		DWORD rdSize = sizeof buf ;
+		DWORD type = 0 ;
+		if(ERROR_SUCCESS==RegQueryValueEx(
+		  HKey, name.c_str(), 0, &type, buf, &rdSize )) {
+			if(type==REG_SZ) {
+				wstring result((LPCTSTR)(&buf[0])) ;
+				DBGOUT("Mode: %s=%s\n",wcs2mbcs(name).c_str(),wcs2mbcs(result).c_str());
+				return result ;
+			}
+		}
+		return defStr ;
+	}
+};
+//---------------------------------------------------------------------------
+class CIniValueLoader : public IValueLoader
+{
+	string Section, Filename ;
+public:
+	CIniValueLoader(const string section,const string filename)
+	{ Section=section; Filename=filename; }
+	virtual DWORD ReadDWORD(const wstring name,DWORD defVal=0) const {
+		return (DWORD) GetPrivateProfileIntA(
+			Section.c_str(),wcs2mbcs(name).c_str(),(int)defVal,Filename.c_str()) ;
+	}
+	virtual wstring ReadString(const wstring name,const wstring defStr) const {
+		const size_t MAX_CHARS = 1024 ;
+		char buf[MAX_CHARS] ;
+		DWORD num = GetPrivateProfileStringA(
+			Section.c_str(),wcs2mbcs(name).c_str(),wcs2mbcs(defStr).c_str(),
+			buf,MAX_CHARS,Filename.c_str());
+		return num>0 ? mbcs2wcs(string(buf,num)) : defStr ;
+	}
+};
 //===========================================================================
 // CBonFSHybrid
 //---------------------------------------------------------------------------
 CBonFSHybrid::CBonFSHybrid()
 {
 	m_pThis = this;
-	m_RegChannels = NULL;
 	m_hasSatellite=false ;
 	tsthr=NULL ;
 	m_fifo=NULL ;
@@ -63,7 +130,6 @@ CBonFSHybrid::CBonFSHybrid()
 CBonFSHybrid::~CBonFSHybrid()
 {
 	FifoFinalize() ;
-	if(m_RegChannels != NULL) ::GlobalFree(m_RegChannels);
 	m_pThis = NULL;
 }
 //---------------------------------------------------------------------------
@@ -76,16 +142,25 @@ string CBonFSHybrid::ModuleFileName()
 //---------------------------------------------------------------------------
 bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev)
 {
+	bool result = false ;
+	DWORD counter = 0;
 	hDev=hUsbDev=NULL;
-	int idx = UserDecidedDeviceIdx();
-
-	if((hDev = usbdevfile_alloc(&idx,&drvGUID) ) == NULL) {   //# not found
-		return false;
-	}
-	if((hUsbDev = usbdevfile_init(hDev) ) == NULL) {   //# failed
-		return false;
-	}
-	return true ;
+	do {
+		int idx = UserDecidedDeviceIdx();
+		if(counter>0){
+			Sleep(50);
+			FreeDevice(hDev,hUsbDev);
+			Sleep(1000) ; //# take a breath before retrying...
+		}
+		if((hDev = usbdevfile_alloc(&idx,&drvGUID) ) == NULL) {
+			continue; //# not found
+		}
+		if((hUsbDev = usbdevfile_init(hDev) ) == NULL) {
+			continue; //# failed
+		}
+		result = true ;
+	}while(!result&&++counter<=DEVICE_RETRY_TIMES);
+	return result ;
 }
 //---------------------------------------------------------------------------
 void CBonFSHybrid::FreeDevice(HANDLE &hDev, HANDLE &hUsbDev)
@@ -100,99 +175,220 @@ void CBonFSHybrid::FreeDevice(HANDLE &hDev, HANDLE &hUsbDev)
 	}
 }
 //---------------------------------------------------------------------------
-void CBonFSHybrid::LoadUserChannels(bool hasSatellite)
+void CBonFSHybrid::LoadUserChannels()
 {
-  m_hasSatellite = hasSatellite ;
-  string chFName = file_path_of(ModuleFileName()) + file_prefix_of(ModuleFileName()) + ".ch.txt" ;
+	string chFName = file_path_of(ModuleFileName()) + file_prefix_of(ModuleFileName()) + ".ch.txt" ;
 
-  m_UserChannels.clear() ;
-  m_UserSpaceIndices.clear() ;
+	FILE *st = NULL ;
+	fopen_s(&st, chFName.c_str(), "rt") ;
+	if (!st)
+		return ;
+	char s[512] ;
 
-  FILE *st=NULL ;
-  fopen_s(&st,chFName.c_str(),"rt") ;
-  if(!st) return ;
-  char s[512] ;
+	CHANNELS channels ;
+	SPACEINDICES indices ;
 
-  std::wstring space_name=L"" ;
-  while(!feof(st)) {
-	s[0]='\0' ;
-	fgets(s,512,st) ;
-	string strLine = trim(string(s)) ;
-	if(strLine.empty()) continue ;
-	wstring wstrLine = mbcs2wcs(strLine) ;
-	int t=0 ;
-	vector<wstring> params ;
-	split(params,wstrLine,L';') ;
-	wstrLine = params[0] ; params.clear() ;
-	split(params,wstrLine,L',') ;
-	if(params.size()>=2&&!params[0].empty()) {
-	  BAND band = BAND_na ;
-	  int channel = 0 ;
-	  DWORD freq = 0 ;
-	  int stream = 0 ;
-	  int tsid = 0 ;
-	  wstring &space = params[0] ;
-	  wstring name = params.size()>=3 ? params[2] : wstring(L"") ;
-	  wstring subname = params[1] ;
-	  vector<wstring> phyChDiv ;
-	  split(phyChDiv,params[1],'/') ;
-	  for(size_t i=0;i<phyChDiv.size();i++) {
-		wstring phyCh = phyChDiv[i] ;
-		if( phyCh.length()>3&&
-			phyCh.substr(phyCh.length()-3)==L"MHz" ) {
-		  float megaHz = 0.f ;
-		  if(swscanf_s(phyCh.c_str(),L"%fMHz",&megaHz)==1) {
-			freq=DWORD(megaHz*1000.f) ;
-			channel = CHANNEL::BandFromFreq(freq)!=BAND_na ? -1 : 0 ;
-		  }
-		}else {
-		  if(hasSatellite&&swscanf_s(phyCh.c_str(),L"TS%d",&stream)==1)
-			;
-		  else if(hasSatellite&&swscanf_s(phyCh.c_str(),L"ID%i",&tsid)==1)
-			;
-		  else if(band==BAND_na) {
-			if(hasSatellite&&swscanf_s(phyCh.c_str(),L"BS%d",&channel)==1)
-			  band = BAND_BS ;
-			else if(hasSatellite&&swscanf_s(phyCh.c_str(),L"ND%d",&channel)==1)
-			  band = BAND_ND ;
-			else if(swscanf_s(phyCh.c_str(),L"C%d",&channel)==1)
-			  band = BAND_VU, subname=L"C"+itows(channel)+L"ch", channel+=100 ;
-			else if(swscanf_s(phyCh.c_str(),L"%d",&channel)==1)
-			  band = BAND_VU, subname=itows(channel)+L"ch" ;
-		  }
+	std::wstring space_name = L"" ;
+	while (!feof(st)) {
+		s[0] = '\0' ;
+		fgets(s, 512, st) ;
+		string strLine = trim(string(s)) ;
+		if (strLine.empty())
+			continue ;
+		wstring wstrLine = mbcs2wcs(strLine) ;
+		int t = 0 ;
+		vector<wstring> params ;
+		split(params, wstrLine, L';') ;
+		wstrLine = params[0] ;
+		params.clear() ;
+		split(params, wstrLine, L',') ;
+		if (params.size() >= 2 && !params[0].empty()) {
+			BAND band = BAND_na ;
+			int channel = 0 ;
+			DWORD freq = 0 ;
+			int stream = 0 ;
+			int tsid = 0 ;
+			wstring &space = params[0] ;
+			wstring name = params.size() >= 3 ? params[2] : wstring(L"") ;
+			wstring subname = params[1] ;
+			vector<wstring> phyChDiv ;
+			split(phyChDiv, params[1], '/') ;
+			for (size_t i = 0;i < phyChDiv.size();i++) {
+				wstring phyCh = phyChDiv[i] ;
+				if ( phyCh.length() > 3 &&
+				        phyCh.substr(phyCh.length() - 3) == L"MHz" ) {
+					float megaHz = 0.f ;
+					if (swscanf_s(phyCh.c_str(), L"%fMHz", &megaHz) == 1) {
+						freq = DWORD(megaHz * 1000.f) ;
+						channel = CHANNEL::BandFromFreq(freq) != BAND_na ? -1 : 0 ;
+					}
+				} else {
+					if (m_hasSatellite && swscanf_s(phyCh.c_str(), L"TS%d", &stream) == 1)
+						;
+					else if (m_hasSatellite && swscanf_s(phyCh.c_str(), L"ID%i", &tsid) == 1)
+						;
+					else if (band == BAND_na) {
+						if (m_hasSatellite && swscanf_s(phyCh.c_str(), L"BS%d", &channel) == 1)
+							band = BAND_BS ;
+						else if (m_hasSatellite && swscanf_s(phyCh.c_str(), L"ND%d", &channel) == 1)
+							band = BAND_ND ;
+						else if (swscanf_s(phyCh.c_str(), L"C%d", &channel) == 1)
+							band = BAND_VU, subname = L"C" + itows(channel) + L"ch", channel += 100 ;
+						else if (swscanf_s(phyCh.c_str(), L"%d", &channel) == 1)
+							band = BAND_VU, subname = itows(channel) + L"ch" ;
+					}
+				}
+			}
+			if (name == L"")
+				name = subname ;
+			if (freq > 0 && channel < 0)
+				channels.push_back(
+				    CHANNEL(space, freq, name, stream, tsid)) ;
+			else if (band != BAND_na && channel > 0)
+				channels.push_back(
+				    CHANNEL(space, band, channel, name, stream, tsid)) ;
+			else
+				continue ;
+			if (space_name != space) {
+				indices.push_back(channels.size() - 1) ;
+				space_name = space ;
+			}
 		}
-	  }
-	  if(name==L"")
-		name=subname ;
-	  if(freq>0&&channel<0)
-		m_UserChannels.push_back(
-		  CHANNEL(space,freq,name,stream,tsid)) ;
-	  else if(band!=BAND_na&&channel>0)
-		m_UserChannels.push_back(
-		  CHANNEL(space,band,channel,name,stream,tsid)) ;
-	  else
-		continue ;
-	  if(space_name!=space) {
-		m_UserSpaceIndices.push_back(m_UserChannels.size()-1) ;
-		space_name=space ;
-	  }
 	}
-  }
 
-  fclose(st) ;
+	if (!channels.empty() && !indices.empty()) {
+		m_UserChannels.swap(channels) ;
+		m_UserSpaceIndices.swap(indices) ;
+	}
+
+	fclose(st) ;
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::BuildTChannels()
+{
+	if(DEFSPACE_VHF) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		for(int i=1;i<=12;i++) {
+			m_UserChannels.push_back(CHANNEL(L"VHF",BAND_VU,i,itows(i)+L"ch"));
+		}
+	}
+	if(DEFSPACE_UHF) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		for(int i=13;i<=62;i++) {
+			m_UserChannels.push_back(CHANNEL(L"UHF",BAND_VU,i,itows(i)+L"ch"));
+		}
+	}
+	if(DEFSPACE_CATV) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		for(int i=13;i<=63;i++) {
+			m_UserChannels.push_back(CHANNEL(L"CATV",BAND_VU,i+100,L"C"+itows(i)+L"ch"));
+		}
+	}
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::BuildSChannels()
+{
+	if(DEFSPACE_BS) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		for(int i=1;i<=23;i+=2) {
+			if(DEFSPACE_BS_STREAMS) for(DWORD j=0;j<DEFSPACE_BS_STREAMS;j++) {
+				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i)+L"/TS"+itows(j),j));
+			}else {
+				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i),0));
+			}
+		}
+	}
+	if(DEFSPACE_CS110) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		for(int i=2;i<=24;i+=2) {
+			if(DEFSPACE_CS110_STREAMS) for(DWORD j=0;j<DEFSPACE_CS110_STREAMS;j++) {
+				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i)+L"/TS"+itows(j),j));
+			}else {
+				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i),0));
+			}
+		}
+	}
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::BuildAuxChannels()
+{
+	if(!DEFSPACE_AUX) return ;
+	CHANNELS channels ;
+
+	string path = file_path_of(ModuleFileName()) ;
+	string dllIniFileName = path + file_prefix_of(ModuleFileName()) + ".ini" ;
+	ReadIniChannels(dllIniFileName,channels);
+	if(channels.empty()) {
+		string unitedIniFileName = path + UNITEDINIFILENAME ;
+		ReadIniChannels(unitedIniFileName,channels);
+		if(channels.empty()) {
+			HKEY hKey;
+			if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, RegName(), 0, KEY_READ, &hKey)) {
+				ReadRegChannels(hKey,channels);
+				RegCloseKey(hKey);
+			}
+			if(channels.empty()) {
+				if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_LOCAL_MACHINE, RegName(), 0, KEY_READ, &hKey)) {
+					ReadRegChannels(hKey,channels);
+					RegCloseKey(hKey);
+				}
+			}
+		}
+	}
+	if(!channels.empty()) {
+		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
+		copy(channels.begin(),channels.end(),back_inserter(m_UserChannels)) ;
+	}
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::ArrangeChannels()
+{
+	struct space_finder : public std::unary_function<CHANNEL, bool> {
+		std::wstring space ;
+		space_finder(std::wstring space_) {
+			space = space_ ;
+		}
+		bool operator ()(const CHANNEL &ch) const {
+			return space == ch.Space;
+		}
+	};
+	if (!m_InvisibleSpaces.empty() || !m_SpaceArrangement.empty()) {
+		CHANNELS newChannels ;
+		//CHANNELS oldChannels(m_UserChannels) ;
+		CHANNELS &oldChannels = m_UserChannels ;
+		CHANNELS::iterator beg = oldChannels.begin() ;
+		CHANNELS::iterator end = oldChannels.end() ;
+		for (CHANNELS::size_type i = 0; i < m_InvisibleSpaces.size(); i++) {
+			end = remove_if(beg, end, space_finder(m_InvisibleSpaces[i]));
+		}
+		for (CHANNELS::size_type i = 0; i < m_SpaceArrangement.size(); i++) {
+			space_finder finder(m_SpaceArrangement[i]) ;
+			remove_copy_if(beg, end, back_inserter(newChannels), not1(finder)) ;
+			end = remove_if(beg, end, finder) ;
+		}
+		copy(beg, end, back_inserter(newChannels)) ;
+		SPACEINDICES newSpaceIndices ;
+		wstring space = L"" ;
+		for (CHANNELS::size_type i = 0;i < newChannels.size();i++) {
+			if (newChannels[i].Space != space) {
+				space = newChannels[i].Space ;
+				newSpaceIndices.push_back(size_t(i)) ;
+			}
+		}
+		m_UserChannels.swap(newChannels) ;
+		m_UserSpaceIndices.swap(newSpaceIndices) ;
+	}
 }
 //---------------------------------------------------------------------------
 CBonFSHybrid::CHANNEL *CBonFSHybrid::GetUserChannel(DWORD dwSpace, DWORD dwChannel)
 {
-	if(UserChannelExists()){
-		if(dwSpace<m_UserSpaceIndices.size()) {
-			DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
-			DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size()
-				? m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
-			if(dwChannel<end-begin) {
-				DWORD index = begin + dwChannel ;
-				return &m_UserChannels[index] ;
-			}
+	if(dwSpace<m_UserSpaceIndices.size()) {
+		DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
+		DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size()
+			? m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
+		if(dwChannel<end-begin) {
+			DWORD index = begin + dwChannel ;
+			return &m_UserChannels[index] ;
 		}
 	}
 	return NULL ;
@@ -202,40 +398,10 @@ CBonFSHybrid::CHANNEL CBonFSHybrid::GetChannel(DWORD dwSpace, DWORD dwChannel)
 {
 	if(dwSpace == SPACE_CHASFREQ) {  //# dwChannel as freq/kHz
 		return CHANNEL(L"CHASFREQ",dwChannel,itows(dwChannel)+L"kHz") ;
-	}else if(UserChannelExists()) {
-		if(CHANNEL *userChannel = GetUserChannel(dwSpace,dwChannel))
-		    return *userChannel ;
-	}else {
-		LPCTSTR strSpace = EnumTuningSpace(dwSpace) ;
-		LPCTSTR strChannel = EnumChannelName(dwSpace,dwChannel) ;
-		if(strSpace&&strChannel) {
-		   	const DWORD d = m_RegChannels ? 1 : 0 ;
-			if(0==dwSpace||(d&&1==dwSpace))  //# VHS/UHF
-				return CHANNEL(strSpace,GetTerraFreq(dwSpace,dwChannel),strChannel) ;
-			else if(m_hasSatellite) {
-				if(1+d == dwSpace && dwChannel < 12 * 8)  //# BS
-					return CHANNEL(strSpace,BAND_BS,(dwChannel>>3)*2+1,strChannel,dwChannel&7) ;
-				else if(2+d == dwSpace && dwChannel < 12 * 8)  //# CS
-					return CHANNEL(strSpace,BAND_ND,(dwChannel>>3)*2+2,strChannel,dwChannel&7) ;
-
-			}
-
-		}
+	}else if(CHANNEL *userChannel = GetUserChannel(dwSpace,dwChannel)) {
+		return *userChannel ;
 	}
 	return CHANNEL() ;
-}
-//---------------------------------------------------------------------------
-DWORD CBonFSHybrid::GetTerraFreq(DWORD dwSpace, DWORD dwChannel)
-{
-	if(dwSpace == 0) {//# UHF standard channels
-		if(dwChannel < 40)
-			return dwChannel * 6000 + 473143;
-	}else if(dwSpace == 1 && m_RegChannels != NULL) {//# Defined channels on registry
-		const DWORD dwNumOfChannels = m_RegChannels[0] & 0xFFFF;
-		if(dwChannel < dwNumOfChannels)
-			return m_RegChannels[dwChannel + 1];
-	}
-	return 0 ;
 }
 //---------------------------------------------------------------------------
 bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
@@ -294,23 +460,8 @@ void CBonFSHybrid::FifoStop()
 	if(tsthr) tsthread_stop(tsthr);
 }
 //---------------------------------------------------------------------------
-void CBonFSHybrid::ReadRegMode(HKEY hPKey)
+void CBonFSHybrid::ReadRegChannels(HKEY hPKey, CHANNELS &regChannels)
 {
-	#define LOADDW(val) do { val = RegReadDword(hPKey,L#val,val); } while(0)
-	LOADDW(TSCACHING_LEGACY);
-	LOADDW(TSCACHING_DEFRAGMENT);
-	LOADDW(TSCACHING_DEFRAGSIZE);
-	LOADDW(ASYNCTS_QUEUENUM);
-	LOADDW(ASYNCTS_QUEUEMAX);
-	LOADDW(ASYNCTS_EMPTYBORDER);
-	LOADDW(ASYNCTS_EMPTYLIMIT);
-	#undef LOADDW
-}
-//---------------------------------------------------------------------------
-void CBonFSHybrid::ReadRegChannels(HKEY hPKey)
-{
-	if(m_RegChannels != NULL) return;
-
 	HKEY hKey;
 	DWORD NumOfValues;
 	TCHAR szValueName[32];
@@ -322,11 +473,7 @@ void CBonFSHybrid::ReadRegChannels(HKEY hPKey)
 		RegCloseKey(hKey);
 		return;
 	}
-	dwMaxValueName++;
-	m_RegChannels = (DWORD*) ::GlobalAlloc(GMEM_FIXED, NumOfValues * (dwMaxValueName * sizeof(TCHAR) + sizeof(DWORD)) + sizeof(DWORD) );
-	m_RegChannels[0] = dwMaxValueName << 16 | NumOfValues;
-	ZeroMemory( m_RegChannels + 1, sizeof(DWORD) * NumOfValues );
-	TCHAR *ptrStr;
+	regChannels.resize(NumOfValues) ;
 	for(DWORD dwIdx = 0; dwIdx < NumOfValues; dwIdx++ ) {
 		dwLen = 32;
 		dwByte = sizeof(dwValue);
@@ -336,23 +483,129 @@ void CBonFSHybrid::ReadRegChannels(HKEY hPKey)
 		}
 		dwByte = dwValue >> 24; //# Index
 		if( dwByte >= NumOfValues ) continue;
-		m_RegChannels[dwByte + 1] = dwValue & 0x00ffffff;
-		ptrStr = (TCHAR*)(m_RegChannels + NumOfValues + 1);
-		ptrStr += dwMaxValueName * dwByte;
-		lstrcpyn( ptrStr, szValueName, dwMaxValueName );
+		regChannels[dwByte] = CHANNEL(L"AUX",dwValue & 0x00ffffff,szValueName) ;
 	}
 	RegCloseKey(hKey);
 }
 //---------------------------------------------------------------------------
+void CBonFSHybrid::ReadIniChannels (const std::string iniFilename, CHANNELS &iniChannels)
+{
+	BUFFER<char> buf(256) ;
+	DWORD n = 0;
+	do {
+		if (n)
+			buf.resize(buf.size()*2) ;
+		n = GetPrivateProfileSectionA(INICHANNELS_SECTION, buf.data(), (DWORD)buf.size(), iniFilename.c_str());
+	} while (n == buf.size() - 2);
+	if (!n)
+		return ;
+	size_t numChannel = 0 ;
+	for (size_t i = 0;i < n;i++) {
+		char *p = buf.data() ;
+		p = &p[i] ;
+		if (!*p)
+			break ;
+		numChannel++ ;
+		i += strlen(p);
+	}
+	if (!numChannel)
+		return ;
+	iniChannels.resize(numChannel) ;
+	for (size_t i = 0;i < n;i++) {
+		char *p = buf.data() ;
+		p = &p[i] ;
+		if (!*p)
+			break ;
+		vector<string> item ;
+		split(item, string(p), '=') ;
+		if (item.size() == 2) {
+			int val = 0 ;
+			if (sscanf_s(item[1].c_str(), "%i", &val) == 1) {
+				int idx = val >> 24;
+				iniChannels[idx] = CHANNEL(L"AUX", val & 0x00ffffff, mbcs2wcs(item[0])) ;
+			}
+		}
+		i += strlen(p);
+	}
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::LoadReg()
+{
+	HKEY hKey;
+	if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_LOCAL_MACHINE, RegName(), 0, KEY_READ, &hKey)) {
+		CRegValueLoader Loader(hKey) ;
+		LoadValues(&Loader);
+		RegCloseKey(hKey);
+	}
+	if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, RegName(), 0, KEY_READ, &hKey)) {
+		CRegValueLoader Loader(hKey) ;
+		LoadValues(&Loader);
+		RegCloseKey(hKey);
+	}
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::LoadIni()
+{
+	string path = file_path_of(ModuleFileName()) ;
+	string unitedIniFileName = path + UNITEDINIFILENAME ;
+	CIniValueLoader unitedIniLoader(INIVALUELOADER_SECTION, unitedIniFileName) ;
+	LoadValues(&unitedIniLoader);
+	string dllIniFileName = path + file_prefix_of(ModuleFileName()) + ".ini" ;
+	CIniValueLoader dllIniLoader(INIVALUELOADER_SECTION, dllIniFileName) ;
+	LoadValues(&dllIniLoader);
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
+{
+	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
+	#define LOADMSTRLIST(name) do { \
+		wstring s = Loader->ReadString(L#name); \
+		if(!s.empty()) { \
+			m_##name.clear(); split(m_##name,s,','); \
+		} }while(0)
+	LOADDW(TSCACHING_LEGACY);
+	LOADDW(TSCACHING_DEFRAGMENT);
+	LOADDW(TSCACHING_DEFRAGSIZE);
+	LOADDW(ASYNCTS_QUEUENUM);
+	LOADDW(ASYNCTS_QUEUEMAX);
+	LOADDW(ASYNCTS_EMPTYBORDER);
+	LOADDW(ASYNCTS_EMPTYLIMIT);
+	LOADDW(DEFSPACE_VHF);
+	LOADDW(DEFSPACE_UHF);
+	LOADDW(DEFSPACE_CATV);
+	LOADDW(DEFSPACE_AUX);
+	LOADDW(DEFSPACE_BS);
+	LOADDW(DEFSPACE_BS_STREAMS);
+	LOADDW(DEFSPACE_CS110);
+	LOADDW(DEFSPACE_CS110_STREAMS);
+	LOADDW(BYTETUNING_USER);
+	LOADDW(DEVICE_RETRY_TIMES);
+	LOADMSTRLIST(SpaceArrangement);
+	LOADMSTRLIST(InvisibleSpaces);
+	#undef LOADMSTRLIST
+	#undef LOADDW
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::Initialize()
+{
+	LoadReg();
+	LoadIni();
+	BuildTChannels();
+	BuildAuxChannels();
+	if(m_hasSatellite)
+		BuildSChannels();
+	LoadUserChannels();
+	ArrangeChannels();
+}
+//---------------------------------------------------------------------------
 const BOOL CBonFSHybrid::SetChannel(const BYTE bCh)
 {
-	DWORD dwFreq = 0 ;
-	if(UserChannelExists()) {
+	if(BYTETUNING_USER) {
 		if(size_t(bCh)<m_UserChannels.size()) {
 			DWORD space = 0 ;
 			for(;space<m_UserSpaceIndices.size();space++) {
 				if(bCh<m_UserSpaceIndices[space]) {
-				  break ;
+					break ;
 				}
 			}
 			if(--space<m_UserSpaceIndices.size()) {
@@ -361,18 +614,13 @@ const BOOL CBonFSHybrid::SetChannel(const BYTE bCh)
 			}
 		}
 	}else {
-		if( (bCh>=13&&bCh<=62) || (bCh>=113&&bCh<=163) ) //# VU
-			dwFreq = CHANNEL::FreqFromBandCh(BAND_VU,bCh) ;
-		#if 0
-		else if(m_hasSatellite&&bCh>=200&&bCh<=224) {
-			if(bCh&1) //# BS ( odd )
-				dwFreq = CHANNEL::FreqFromBandCh(BAND_BS,bCh-200) ;
-			else //# ND ( even )
-				dwFreq = CHANNEL::FreqFromBandCh(BAND_ND,bCh-200) ;
+		if( (DEFSPACE_VHF&&bCh>=1&&bCh<=12) ||
+			(DEFSPACE_UHF&&bCh>=13&&bCh<=62) ||
+			(DEFSPACE_CATV&&bCh>=113&&bCh<=163) ) {
+			return SetChannel(SPACE_CHASFREQ, CHANNEL::FreqFromBandCh(BAND_VU,bCh));
 		}
-		#endif
 	}
-	return SetChannel(SPACE_CHASFREQ, dwFreq);
+	return FALSE ;
 }
 //---------------------------------------------------------------------------
 const DWORD CBonFSHybrid::WaitTsStream(const DWORD dwTimeOut)
@@ -438,56 +686,20 @@ void CBonFSHybrid::PurgeTsStream()
 //---------------------------------------------------------------------------
 LPCTSTR CBonFSHybrid::EnumTuningSpace(const DWORD dwSpace)
 {
-	if(UserChannelExists()) {
-		if(dwSpace<m_UserSpaceIndices.size())
-			return m_UserChannels[m_UserSpaceIndices[dwSpace]].Space.c_str() ;
-	}else {
-		if(dwSpace==0) return TEXT("地デジ") ;
-		else if(dwSpace==1&&m_RegChannels!=NULL) return TEXT("地デジ(追加)") ;
-		else if(m_hasSatellite) {
-			const DWORD d = m_RegChannels ? 1 : 0 ;
-			if(1+d == dwSpace)  return TEXT("BS");
-			else if(2+d == dwSpace)  return TEXT("CS");
-		}
-	}
+	if(dwSpace<m_UserSpaceIndices.size())
+		return m_UserChannels[m_UserSpaceIndices[dwSpace]].Space.c_str() ;
 	return NULL ;
 }
 //---------------------------------------------------------------------------
 LPCTSTR CBonFSHybrid::EnumChannelName(const DWORD dwSpace, const DWORD dwChannel)
 {
 	static TCHAR buf[8];
-	if(UserChannelExists()) {
-	  if(dwSpace<m_UserSpaceIndices.size()) {
-		  DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
-		  DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size() ?
-			  m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
-		  if(dwChannel<end-begin)
-			  return m_UserChannels[begin+dwChannel].Name.c_str() ;
-	  }
-	}else {
-		if(dwSpace == 0) {
-			if(dwChannel < 40) {
-				_sntprintf_s(buf, sizeof(buf)/sizeof(TCHAR), _TRUNCATE, TEXT("%u"), dwChannel + 13);
-				return buf;    //# The caller must copy data from this buffer.
-			}
-		}
-		else if(dwSpace == 1 && m_RegChannels!=NULL) {
-			//# Defined channels on registry
-			const DWORD dwChannelLen    = m_RegChannels[0] >> 16;
-			const DWORD dwNumOfChannels = m_RegChannels[0] & 0xFFFF;
-			TCHAR* const ptrStr = (TCHAR*)(m_RegChannels + dwNumOfChannels + 1);
-			if(dwChannel < dwNumOfChannels)	return ptrStr + (dwChannelLen * dwChannel);
-		}
-		else if(m_hasSatellite) {
-			const DWORD d = m_RegChannels ? 1 : 0 ;
-			if(1+d == dwSpace && dwChannel < 12 * 8) {
-				_sntprintf_s(buf, sizeof(buf)/sizeof(TCHAR), _TRUNCATE, TEXT("%02u.%u"), (dwChannel >> 3)*2 + 1, dwChannel & 0x7);
-				return buf;
-			}else if(2+d == dwSpace && dwChannel < 12 * 8) {
-				_sntprintf_s(buf, sizeof(buf)/sizeof(TCHAR), _TRUNCATE, TEXT("%02u.%u"), (dwChannel >> 3)*2 + 2, dwChannel & 0x7);
-				return buf;
-			}
-		}
+	if(dwSpace<m_UserSpaceIndices.size()) {
+		DWORD begin = (DWORD)m_UserSpaceIndices[dwSpace] ;
+		DWORD end = DWORD(dwSpace+1 < m_UserSpaceIndices.size() ?
+			m_UserSpaceIndices[dwSpace+1] : m_UserChannels.size()) ;
+		if(dwChannel<end-begin)
+			return m_UserChannels[begin+dwChannel].Name.c_str() ;
 	}
 	return NULL ;
 }

@@ -28,16 +28,22 @@ DWORD USUNPTV_CHANNEL_WAIT    = 480 ;
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
 CBonTuner::CBonTuner()
-: CBonFSHybrid(), m_dwCurSpace(123), m_dwCurChannel(0), m_hDev(NULL), m_hUsbDev(NULL),
- pDev(NULL), demodDev(NULL), m_selectedTuner(-1), m_chCur()
+: CBonFSHybrid(), m_dwCurSpace(123), m_dwCurChannel(0), m_hasStream(FALSE),
+ m_hDev(NULL), m_hUsbDev(NULL),pDev(NULL), demodDev(NULL), m_selectedTuner(-1),
+ m_chCur()
 {
+	m_hasSatellite=true ;
 	fill_n(tunerDev, 2, (void*)NULL);
-	LoadData(this,g_RegKey,true);
 }
 
 CBonTuner::~CBonTuner()
 {
 	CloseTuner();
+}
+
+const TCHAR *CBonTuner::RegName()
+{
+	return g_RegKey ;
 }
 
 int CBonTuner::UserDecidedDeviceIdx()
@@ -125,6 +131,7 @@ void CBonTuner::CloseTuner()
 
 const float CBonTuner::GetSignalLevel(void)
 {
+	if(!m_hasStream) return 0.f ;
 	if(0 > m_selectedTuner || (! demodDev) ) return -3.1f;
 	unsigned statData[4];
 	if(tc90522_readStatistic(demodDev, m_selectedTuner, statData) ) return -3.2f;
@@ -154,6 +161,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	if( ch.Freq >= 900000 ) tunerNum = 1;
 
 	//# change channel
+	m_hasStream=FALSE ;
 	FifoStop() ;
 
 	if(tunerNum != m_selectedTuner) {
@@ -212,6 +220,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	//# set variables
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
+	m_hasStream = hasStream ;
 	m_selectedTuner = tunerNum;
 	m_chCur = ch ;
 
@@ -235,10 +244,10 @@ const DWORD CBonTuner::GetCurSpace(void)
 const DWORD CBonTuner::GetCurChannel(void)
 { return m_dwCurChannel; }
 
-void CBonTuner::ReadRegMode (HKEY hPKey)
+void CBonTuner::LoadValues(const IValueLoader *Loader)
 {
-	CBonFSHybrid::ReadRegMode (hPKey) ;
-	#define LOADDW(val) do { val = RegReadDword(hPKey,L#val,val); } while(0)
+	CBonFSHybrid::LoadValues (Loader) ;
+	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
 	LOADDW(USUNPTV_SETSFREQ_TIMES);
 	LOADDW(USUNPTV_SETSTSID_TIMES);
 	LOADDW(USUNPTV_SETTFREQ_TIMES);

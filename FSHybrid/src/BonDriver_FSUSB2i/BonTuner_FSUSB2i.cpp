@@ -20,13 +20,16 @@ const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
 CBonTuner::CBonTuner()
 : CBonFSHybrid(), m_dwCurSpace(0), m_dwCurChannel(0), m_hDev(NULL), m_hUsbDev(NULL), pDev(NULL)
-{
-	LoadData(this,g_RegKey) ;
-}
+{}
 
 CBonTuner::~CBonTuner()
 {
 	CloseTuner();
+}
+
+const TCHAR *CBonTuner::RegName()
+{
+	return g_RegKey ;
 }
 
 int CBonTuner::UserDecidedDeviceIdx()
@@ -142,10 +145,10 @@ const DWORD CBonTuner::GetCurChannel(void)
 { return m_dwCurChannel; }
 
 
-void CBonTuner::ReadRegMode (HKEY hPKey)
+void CBonTuner::LoadValues(const IValueLoader *Loader)
 {
-	CBonFSHybrid::ReadRegMode (hPKey) ;
-	#define LOADDW(val) do { val = RegReadDword(hPKey,L#val,val); } while(0)
+	CBonFSHybrid::LoadValues (Loader) ;
+	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
 	LOADDW(FSUSB2I_SETFREQ_TIMES);
 	LOADDW(FSUSB2I_TUNING_WAIT);
 	#undef LOADDW

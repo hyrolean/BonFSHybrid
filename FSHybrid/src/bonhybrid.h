@@ -17,49 +17,58 @@ extern "C" {
 
 #define SPACE_CHASFREQ  114514
 
-DWORD RegReadDword(HKEY hKey,LPCTSTR name,DWORD defVal=0);
 
+
+class IValueLoader
+{
+public:
+    virtual DWORD ReadDWORD(const std::wstring name,DWORD defVal=0) const =0 ;
+	virtual std::wstring ReadString(const std::wstring name,const std::wstring defStr=L"") const =0 ;
+};
 
 class CBonFSHybrid : public IBonDriver2
 {
 public:
 	// BAND
 	enum BAND {
-	  BAND_na, // [n/a]
-	  BAND_VU, // VHS, UHF or CATV
-	  BAND_BS, // BS
-	  BAND_ND  // CS110
+		BAND_na, // [n/a]
+		BAND_VU, // VHS, UHF or CATV
+		BAND_BS, // BS
+		BAND_ND  // CS110
 	};
 	// CHANNEL/CHANNELS
 	struct CHANNEL {
-		std::wstring Space ;
-		BAND        Band ;
-		WORD	    Stream ;
-		WORD        TSID ;
-		DWORD       Freq ;
+		std::wstring	Space ;
 		std::wstring	Name ;
+		BAND			Band ;
+		DWORD			Freq ;
+		unsigned		Stream:3 ;
+		WORD			TSID ;
 		CHANNEL();
-        CHANNEL(std::wstring space, BAND band, int channel, std::wstring name,unsigned stream=0,unsigned tsid=0);
-        CHANNEL(std::wstring space, DWORD freq,std::wstring name,unsigned stream=0,unsigned tsid=0);
+		CHANNEL(std::wstring space, BAND band, int channel, std::wstring name,unsigned stream=0,unsigned tsid=0);
+		CHANNEL(std::wstring space, DWORD freq,std::wstring name,unsigned stream=0,unsigned tsid=0);
 		CHANNEL(const CHANNEL &src) ;
 		static DWORD FreqFromBandCh(BAND band,int ch);
-        static BAND BandFromFreq(DWORD freq);
+		static BAND BandFromFreq(DWORD freq);
 	} ;
 	typedef std::vector<CHANNEL> CHANNELS ;
-
+	typedef std::vector<size_t> SPACEINDICES ;
+	typedef std::vector<std::wstring> SPACENAMES ;
 protected:
 	std::string ModuleFileName() ;
 	// Device
-    virtual int UserDecidedDeviceIdx() { return -1 ; }
-    bool FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev) ;
-    void FreeDevice(HANDLE &hDev, HANDLE &hUsbDev) ;
-    // Channels
-    bool UserChannelExists() { return !m_UserChannels.empty() ; }
-	void LoadUserChannels(bool hasSatellite) ;
+	virtual int UserDecidedDeviceIdx() { return -1 ; }
+	bool FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev) ;
+	void FreeDevice(HANDLE &hDev, HANDLE &hUsbDev) ;
+	// Channels
+	void LoadUserChannels() ;
+	void BuildTChannels() ;
+	void BuildSChannels() ;
+	void BuildAuxChannels() ;
+	void ArrangeChannels() ;
 	CHANNEL *GetUserChannel(DWORD dwSpace, DWORD dwChannel);
-    CHANNEL GetChannel(DWORD dwSpace, DWORD dwChannel);
-	DWORD GetTerraFreq(DWORD dwSpace, DWORD dwChannel);
-    // FIFO
+	CHANNEL GetChannel(DWORD dwSpace, DWORD dwChannel);
+	// FIFO
 	bool FifoInitialize(usb_endpoint_st *usbep) ;
 	void FifoFinalize() ;
 	void FifoStart() ;
@@ -68,27 +77,20 @@ protected:
 	static void OnWriteBackFinish(int id, size_t wrote_size, void *arg) ;
 	static void OnWriteBackPurge(void *arg) ;
 
-public:
-	// Registry
-	void ReadRegMode (HKEY hPKey);
-	void ReadRegChannels (HKEY hPKey);
 protected:
-	// Data Loader [ no virtual ]
-    // ( It will be called inline direct from the constructor because of the virtual functions aren't able to work yet. )
-    template<class T> void LoadData(T this_, const TCHAR* reg_, bool hasS_=false){
-		HKEY hKey;
-		if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_LOCAL_MACHINE, reg_, 0, KEY_READ, &hKey)) {
-			this_->ReadRegMode(hKey);
-			this_->ReadRegChannels(hKey);
-			RegCloseKey(hKey);
-		}
-		if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, reg_, 0, KEY_READ, &hKey)) {
-			this_->ReadRegMode(hKey);
-			this_->ReadRegChannels(hKey);
-			RegCloseKey(hKey);
-		}
-		this_->LoadUserChannels(hasS_) ;
-	}
+	// Registry
+	virtual const TCHAR *RegName() { return NULL ; }
+	// Channels
+	virtual void ReadRegChannels (HKEY hPKey, CHANNELS &regChannels);
+	virtual void ReadIniChannels (const std::string iniFilename, CHANNELS &iniChannels);
+	// Loader
+	virtual void LoadReg();
+	virtual void LoadIni();
+	virtual void LoadValues(const IValueLoader *Loader);
+
+public:
+	// Initializer
+	virtual void Initialize();
 
 public: // inherited
 	// IBonDriver
@@ -101,20 +103,19 @@ public: // inherited
 	// IBonDriver2
 	virtual LPCTSTR EnumTuningSpace(const DWORD dwSpace);
 	virtual LPCTSTR EnumChannelName(const DWORD dwSpace, const DWORD dwChannel);
-    virtual const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel) {return FALSE;}
+	virtual const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel) {return FALSE;}
 
-public:
+protected:
 	CBonFSHybrid();
 	virtual ~CBonFSHybrid();
 
 protected:
-    // Extra Channel List
-	DWORD *m_RegChannels;
 	// User Channels
 	CHANNELS m_UserChannels ;
-	std::vector<size_t> m_UserSpaceIndices;
+	SPACEINDICES m_UserSpaceIndices;
+	SPACENAMES m_SpaceArrangement, m_InvisibleSpaces ;
 	bool m_hasSatellite ;
-    // tsthread
+	// tsthread
 	tsthread_ptr tsthr;
 	// FIFO
 	CAsyncFifo *m_fifo ;
@@ -128,6 +129,12 @@ public:
 	static HINSTANCE m_hModule;
 
 };
+
+template<class T> IBonDriver *BonFSCreate() {
+	if(T::m_pThis) return static_cast<IBonDriver*>(T::m_pThis) ;
+	if(T *bon = new T) { bon->Initialize() ; return bon ; }
+	return 0 ;
+}
 
 //===========================================================================
 #endif // _BONHYBRID_20191229125131957_H_INCLUDED_

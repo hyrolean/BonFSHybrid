@@ -18,8 +18,10 @@ namespace FSUSB2i {
 
 class CBonTuner : public CBonFSHybrid
 {
-private:
+protected:
+	const TCHAR *RegName() ;
 	int UserDecidedDeviceIdx() ;
+    void LoadValues(const IValueLoader *Loader) ;
 
 public:
 	CBonTuner();
@@ -51,9 +53,6 @@ protected:
 	HANDLE m_hUsbDev;
 	struct usb_endpoint_st  m_USBEP;
 	it9175_state pDev;
-
-public:
-	void ReadRegMode (HKEY hPKey);
 
 };
 

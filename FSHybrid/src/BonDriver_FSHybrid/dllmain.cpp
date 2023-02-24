@@ -54,14 +54,13 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 #pragma warning( disable : 4273 )
 extern "C" __declspec(dllexport) IBonDriver *CreateBonDriver()
 {
-	if (CBonFSHybrid::m_pThis) return CBonFSHybrid::m_pThis;
 	switch(FSHybrid) {
 		case BONDRIVER_FSUSB2N:
-			return ((IBonDriver*) new FSUSB2N::CBonTuner);
+			return BonFSCreate<FSUSB2N::CBonTuner>();
 		case BONDRIVER_FSUSB2I:
-			return ((IBonDriver*) new FSUSB2i::CBonTuner);
+			return BonFSCreate<FSUSB2i::CBonTuner>();
 		case BONDRIVER_USUNPTV:
-			return ((IBonDriver*) new uSUNpTV::CBonTuner);
+			return BonFSCreate<uSUNpTV::CBonTuner>();
 	}
 	return NULL ;
 }

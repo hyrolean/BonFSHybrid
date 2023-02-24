@@ -1,4 +1,4 @@
-BonDriver_FSUSB2i.dll MOD @ 2020/4/27
+BonDriver_FSUSB2i.dll MOD @ 2020/5/22
 
 ■オリジナル版から新たに追加した機能
 
@@ -31,6 +31,12 @@ BonDriver_FSUSB2i.dll MOD @ 2020/4/27
 
 
 ■更新履歴
+
+2020/4/27 からの変更点
+
+  ・BonDriver_FSUSB2i特有の根本的なプチドロップ問題を修正[it9175.c(515)]
+  ・シグナル取得時に転送処理を止めるかどうか決定するフラグを .ini に追加
+    ( FSUSB2I_LOCK_ON_SIGNALで変更可能 初期値1<ロックする> )
 
 2019/12/22 からの変更点
 

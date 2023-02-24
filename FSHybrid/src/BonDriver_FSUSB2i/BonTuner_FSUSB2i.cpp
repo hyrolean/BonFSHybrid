@@ -13,8 +13,9 @@ using namespace std ;
 
 namespace FSUSB2i {
 
-DWORD FSUSB2I_SETFREQ_TIMES     = 2    ;
+DWORD FSUSB2I_SETFREQ_TIMES     = 2 ;
 DWORD FSUSB2I_TUNING_WAIT       = 1500 ;
+BOOL  FSUSB2I_LOCK_ON_SIGNAL    = TRUE ;
 
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
@@ -86,12 +87,17 @@ void CBonTuner::CloseTuner()
 const float CBonTuner::GetSignalLevel(void)
 {
 	if(NULL == pDev) return 0.0f;
-	uint8_t dB; float lv ;
-    if(m_USBEP.dev&&m_USBEP.lockunlockFunc) //# lock
+    
+    bool do_locking = FSUSB2I_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
+    
+    if(do_locking) //# lock
 		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
+
+	uint8_t dB; float lv ;
 	if(it9175_readSNRatio(pDev, &dB) != 0) lv = 0.1f;
 	else lv = dB * 1.0f;
-    if(m_USBEP.dev&&m_USBEP.lockunlockFunc) //# unlock
+
+    if(do_locking) //# unlock
 		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
     return lv ;
 }
@@ -155,6 +161,7 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
 	LOADDW(FSUSB2I_SETFREQ_TIMES);
 	LOADDW(FSUSB2I_TUNING_WAIT);
+    LOADDW(FSUSB2I_LOCK_ON_SIGNAL);
 	#undef LOADDW
 }
 

@@ -24,6 +24,7 @@ DWORD USUNPTV_SETTFREQ_TIMES  = 1   ;
 DWORD USUNPTV_SETSLOCK_WAIT   = 10  ;
 DWORD USUNPTV_SETSTSID_WAIT   = 800 ;
 DWORD USUNPTV_CHANNEL_WAIT    = 480 ;
+BOOL  USUNPTV_LOCK_ON_SIGNAL  = TRUE;
 
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
@@ -135,18 +136,20 @@ const float CBonTuner::GetSignalLevel(void)
 	if(!m_hasStream) return 0.f ;
 	unsigned statData[4];
 	float lv ;
-	if(m_USBEP.dev) { //# lock
-		if(m_USBEP.lockunlockFunc)
-			m_USBEP.lockunlockFunc(m_USBEP.dev,1);
-	}
+    
+	const bool do_locking = USUNPTV_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
+    
+	if(do_locking) //# lock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
+
 	if(tc90522_readStatistic(demodDev, m_selectedTuner, statData) )
 		lv = -3.2f;
 	else
 		lv = statData[1] * 0.01f;
-	if(m_USBEP.dev) { //# unlock
-		if(m_USBEP.lockunlockFunc)
-			m_USBEP.lockunlockFunc(m_USBEP.dev,0);
-	}
+        
+	if(do_locking) //# unlock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
+        
 	return lv ;
 }
 
@@ -266,6 +269,7 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	LOADDW(USUNPTV_SETSLOCK_WAIT);
 	LOADDW(USUNPTV_SETSTSID_WAIT);
 	LOADDW(USUNPTV_CHANNEL_WAIT);
+    LOADDW(USUNPTV_LOCK_ON_SIGNAL);
 	#undef LOADDW
 }
 

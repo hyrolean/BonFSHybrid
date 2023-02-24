@@ -21,7 +21,7 @@ class CBonTuner : public CBonFSHybrid
 protected:
 	const TCHAR *RegName() ;
 	int UserDecidedDeviceIdx() ;
-    void LoadValues(const IValueLoader *Loader) ;
+	void LoadValues(const IValueLoader *Loader) ;
 
 public:
 	CBonTuner();

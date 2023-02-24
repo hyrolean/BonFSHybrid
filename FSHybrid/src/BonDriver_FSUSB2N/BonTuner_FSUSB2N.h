@@ -51,7 +51,7 @@ protected:
 	struct usb_endpoint_st  m_USBEP;
 	EM2874Device *usbDev;
 	KtvDevice *pDev;
-
+    
 };
 
 } // End of namespace FSUSB2N

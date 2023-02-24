@@ -2,8 +2,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 0,2020,4,27
- PRODUCTVERSION 0,2020,4,27
+ FILEVERSION 0,2020,5,22
+ PRODUCTVERSION 0,2020,5,22
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
             VALUE "FileDescription", "Hybrid BonDriver for FSUSB2N/FSUSB2i/uSUNpTV"
-            VALUE "FileVersion", "0,2020,4,27"
+            VALUE "FileVersion", "0,2020,5,22"
             VALUE "InternalName", "BonDriver_FSHybrid.dll"
             VALUE "LegalCopyright", "hyrolean-dtv 2019-2020 inspired by trinity19683 2015-2016"
             VALUE "OriginalFilename", "BonDriver_FSHybrid.dll"
             VALUE "ProductName", "BonDriver_FSHybrid"
-            VALUE "ProductVersion", "0,2020,4,27"
+            VALUE "ProductVersion", "0,2020,5,22"
         END
     END
     BLOCK "VarFileInfo"

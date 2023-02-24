@@ -54,7 +54,7 @@ struct tsthread_param {
 	int total_submit ;
 	struct TSIO_CONTEXT ioContext[TS_MaxNumIO];
 	HANDLE hTsEvents[TS_MaxNumIO*2-1] ;
-	HANDLE hTsAvailable,hTsRead,hTsRestart ;
+	HANDLE hTsAvailable,hTsRead,hTsRestart,hTsStopped ;
 
 	struct write_back_t* wback ; //# write back fifo caching object
 
@@ -63,12 +63,23 @@ struct tsthread_param {
 
 };
 
+  static int __inline isCritical(struct tsthread_param* const ps) {
+	return !(ps->flags & 0x01)||HasSignal(ps->hTsRestart) ;
+  }
+
+  static void __inline lockWinUsb(struct tsthread_param* const ps,int lock) {
+	if(ps->pUSB->lockunlockFunc)
+		 ps->pUSB->lockunlockFunc(ps->pUSB->dev,lock) ;
+  }
+
+
 static void tsthread_purgeURB(const tsthread_ptr ptr)
 {
 	struct tsthread_param* const ps = ptr;
 	int i;
 
 	EnterCriticalSection(&ps->csTsExclusive);
+	lockWinUsb(ps,1);
 
 	WinUsb_AbortPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
 
@@ -109,6 +120,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 
 	WinUsb_FlushPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
 
+	lockWinUsb(ps,0);
 	LeaveCriticalSection(&ps->csTsExclusive);
 }
 
@@ -117,7 +129,6 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 //#   Removed the tsthread_reapURB static function.
 //#   Added the tsthread_bulkURB static function instead of submitURB/reapURB.
 //# Fixed by 2018 LVhJPic0JSk5LiQ1ITskKVk9UGBg
-
 static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 {
 	//# number of the prefetching buffer busy area that shouldn't be submitted
@@ -144,6 +155,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 		}
 
 		if (!(ps->flags & 0x01)) {
+			SetEvent(ps->hTsStopped);
 			WaitForSingleObject(ps->hTsAvailable, TS_PollTimeout) ;
 			continue ;
 		}
@@ -161,7 +173,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			int next_wait_index=-1 ;
 			int max_wait_count = ps->total_submit<MAXIMUM_WAIT_OBJECTS ? ps->total_submit : MAXIMUM_WAIT_OBJECTS ;
 			dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ri] , FALSE, TS_PollTimeout );
-			if (HasSignal(ps->hTsRestart)) continue;
+			if (isCritical(ps)) continue;
 			if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
 				int end_index=(ri+ps->total_submit)%TS_MaxNumIO ;
 				next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ri)%TS_MaxNumIO ;
@@ -185,18 +197,21 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 					DWORD bytesRead=pContext->bytesRead ;
 
-					if (HasSignal(ps->hTsRestart)) break;
+					if (isCritical(ps)) break;
 					//if(!HasSignal(ps->hTsEvents[ri])) break ;
 					if(bytesRead>0) {
 						bRet = TRUE;
 						dRet = 0;
 					}else {
-						if(ps->pUSB->lockunlockFunc)
-							 ps->pUSB->lockunlockFunc(ps->pUSB->dev,1) ;
-						bRet = WinUsb_GetOverlappedResult( ps->pUSB->fd, &(pContext->ol), &bytesRead, FALSE);
-						dRet = GetLastError();
-						if(ps->pUSB->lockunlockFunc)
-							 ps->pUSB->lockunlockFunc(ps->pUSB->dev,0) ;
+						lockWinUsb(ps,1) ;
+						if (isCritical(ps)) {
+							bRet=FALSE ;
+							dRet=ERROR_OPERATION_ABORTED ;
+						}else {
+							bRet = WinUsb_GetOverlappedResult( ps->pUSB->fd, &(pContext->ol), &bytesRead, FALSE);
+							dRet = GetLastError();
+						}
+						lockWinUsb(ps,0) ;
 					}
 					if (ps->buff_unitSize < bytesRead) {
 						DBGOUT("reap: size over (size=%d)\n",bytesRead) ;
@@ -307,10 +322,9 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				//# submit to empties
 				while (num_empties-- > 0) {
 					struct TSIO_CONTEXT* pContext = &ps->ioContext[si];
+					if (isCritical(ps)) break;
 					if(ps->total_submit>=TS_MaxNumIO) break;
-					if (!(ps->flags & 0x01)) break;
 					if (pContext->index>=0) break ;
-					if (HasSignal(ps->hTsRestart)) break;
 					//if (HasSignal(ps->hTsEvents[ri])) break;
 					if (ps->pUSB->endpoint & 0x100) { //# Isochronous
 						//tsthread_stop(ps);
@@ -338,13 +352,16 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					pContext->ol.hEvent = ps->hTsEvents[si];
 					lnTransfered = 0;
 					ResetEvent(pContext->ol.hEvent);
-					if(ps->pUSB->lockunlockFunc)
-						 ps->pUSB->lockunlockFunc(ps->pUSB->dev,1) ;
-					bRet = WinUsb_ReadPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
-						buffer, ps->buff_unitSize, &lnTransfered, &(pContext->ol));
-					dRet = GetLastError();
-					if(ps->pUSB->lockunlockFunc)
-						ps->pUSB->lockunlockFunc(ps->pUSB->dev,0) ;
+					lockWinUsb(ps,1) ;
+					if(isCritical(ps)) {
+						bRet=FALSE ;
+						dRet=ERROR_OPERATION_ABORTED ;
+					}else{
+						bRet = WinUsb_ReadPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
+							buffer, ps->buff_unitSize, &lnTransfered, &(pContext->ol));
+						dRet = GetLastError();
+					}
+					lockWinUsb(ps,0) ;
 					if (FALSE == bRet && ERROR_IO_PENDING != dRet) {
 						DBGOUT("submit: error (code=%d, size=%d)\n",dRet,lnTransfered) ;
 						warn_info(dRet, "submitURB failed");
@@ -473,6 +490,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 	ps->hTsAvailable = CreateEvent( NULL, FALSE, FALSE, NULL );
 	ps->hTsRead = CreateEvent( NULL, FALSE, FALSE, NULL );
 	ps->hTsRestart = CreateEvent( NULL, TRUE, FALSE, NULL );
+	ps->hTsStopped = CreateEvent( NULL, FALSE, FALSE, NULL );
 	InitializeCriticalSection(&ps->csTsExclusive) ;
 
 	//# USB endpoint
@@ -532,6 +550,7 @@ void tsthread_destroy(const tsthread_ptr ptr)
 	CloseHandle(p->hTsRead);
 	CloseHandle(p->hTsRestart);
 	CloseHandle(p->hThread);
+	CloseHandle(p->hTsStopped);
 	DeleteCriticalSection(&p->csTsExclusive);
 
 	uHeapFree(p->buffer);
@@ -542,6 +561,7 @@ void tsthread_start(const tsthread_ptr ptr)
 	struct tsthread_param* const ps = ptr;
 
 	EnterCriticalSection(&ps->csTsExclusive) ;
+	lockWinUsb(ps,1);
 
 	WinUsb_FlushPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
 	ps->flags |= 0x01;    //# continue = T
@@ -550,6 +570,7 @@ void tsthread_start(const tsthread_ptr ptr)
 
 	SetEvent(ps->hTsAvailable);
 
+	lockWinUsb(ps,0);
 	LeaveCriticalSection(&ps->csTsExclusive) ;
 }
 
@@ -558,7 +579,9 @@ void tsthread_stop(const tsthread_ptr ptr)
 	struct tsthread_param* const ps = ptr;
 
 	EnterCriticalSection(&ps->csTsExclusive) ;
+	lockWinUsb(ps,1);
 
+	ResetEvent(ps->hTsStopped);
 	ps->flags &= ~0x01U;    //# continue = F
 
 	if(ps->pUSB->startstopFunc)
@@ -571,7 +594,12 @@ void tsthread_stop(const tsthread_ptr ptr)
 
 	SetEvent(ps->hTsRestart) ;
 
+	lockWinUsb(ps,0);
 	LeaveCriticalSection(&ps->csTsExclusive) ;
+
+	if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
+		WaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT);
+	}
 }
 
 int tsthread_read(const tsthread_ptr tptr, void ** const ptr)

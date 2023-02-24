@@ -7,8 +7,9 @@ using namespace std ;
 namespace FSUSB2N {
 
 DWORD FSUSB2N_INTERIM_WAIT       = 20 ;
-DWORD FSUSB2N_SETFREQ_TIMES      = 2  ;
-DWORD FSUSB2N_RESETDEMOD_TIMES   = 1  ;
+DWORD FSUSB2N_SETFREQ_TIMES      = 2 ;
+DWORD FSUSB2N_RESETDEMOD_TIMES   = 1 ;
+BOOL  FSUSB2N_LOCK_ON_SIGNAL     = TRUE ; 
 
 const TCHAR *g_RegKey = TEXT("Software\\tri.dw.land.to\\FSUSB2N");
 
@@ -127,17 +128,15 @@ const float CBonTuner::GetSignalLevel(void)
 {
 	if(pDev == NULL) return 0.0f;
 
-	if(m_USBEP.dev) { //# lock
-		if(m_USBEP.lockunlockFunc)
-			m_USBEP.lockunlockFunc(m_USBEP.dev,1);
-	}
+	const bool do_locking = FSUSB2N_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
+    
+	if(do_locking) //# lock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
 
 	float db = pDev->DeMod_GetQuality() * 0.01f;
 
-	if(m_USBEP.dev) { //# unlock
-		if(m_USBEP.lockunlockFunc)
-			m_USBEP.lockunlockFunc(m_USBEP.dev,0);
-	}
+	if(do_locking) //# unlock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
 
 	return db ;
 }
@@ -164,7 +163,8 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	if(NULL == pDev) return FALSE;
 	if(NULL == tsthr) return FALSE;
 
-	DWORD dwFreq = GetChannel(dwSpace,dwChannel).Freq ;
+	
+    DWORD dwFreq = GetChannel(dwSpace,dwChannel).Freq ;
 
 	if(dwFreq < 90000U || dwFreq > 772000U) return FALSE;
 
@@ -172,6 +172,11 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 
 	FifoStop();
 	::Sleep(FSUSB2N_INTERIM_WAIT);
+
+	const bool do_locking = FSUSB2N_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
+    
+	if(do_locking) //# lock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
 
 	for(DWORD i=FSUSB2N_SETFREQ_TIMES;i;i--) {
 		pDev->SetFrequency(dwFreq);
@@ -182,9 +187,11 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 		::Sleep(FSUSB2N_INTERIM_WAIT);
 	}
 
+	if(do_locking) //# unlock
+		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
+
 	FifoStart();
 	::Sleep(FSUSB2N_INTERIM_WAIT);
-
 
 	PurgeTsStream();
 
@@ -192,7 +199,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	// ChannelèÓïÒçXêV
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
-
+    
 	return TRUE;
 }
 
@@ -218,6 +225,7 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	LOADDW(FSUSB2N_INTERIM_WAIT);
 	LOADDW(FSUSB2N_SETFREQ_TIMES);
 	LOADDW(FSUSB2N_RESETDEMOD_TIMES);
+	LOADDW(FSUSB2N_LOCK_ON_SIGNAL);
 	#undef LOADDW
 
 	EM2874Device::UserSettings = FunctionMode & 0xffff;

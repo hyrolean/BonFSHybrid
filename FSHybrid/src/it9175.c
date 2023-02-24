@@ -510,8 +510,9 @@ static int it9175_tuner_init(struct state_st* const st)
 		const struct reg_val_mask init4_mtab[] = {
 			{0x80f985, 0x00, 0x01},   //# serial mode = F
 			{0x80f986, 0x00, 0x01},   //# parallel mode = F
+			// note: it9175 tuner init disables
 			{0x80f9a3, 0x00, 0x01},   //# stream2 disable
-			{0x80f9cd, 0x00, 0x01},   //# TS disable
+			//{0x80f9cd, 0x00, 0x01},   //# TS disable
 			{0x80f99d, 0x00, 0x01},   //# stream1 reset = F
 			{0x80f9a4, 0x00, 0x01},   //# stream2 reset = F
 			{0xd8fd, 0x01, 0},

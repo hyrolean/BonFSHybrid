@@ -1,4 +1,4 @@
-BonDriver_uSUNpTV.dll MOD @ 2020/4/27
+BonDriver_uSUNpTV.dll MOD @ 2020/5/22
 
 ■オリジナル版から新たに追加した機能
 
@@ -32,6 +32,11 @@ BonDriver_uSUNpTV.dll MOD @ 2020/4/27
 
 ■更新履歴
 
+2020/4/27 からの変更点
+
+  ・シグナル取得時に転送処理を止めるかどうか決定するフラグを .ini に追加
+    ( USUNPTV_LOCK_ON_SIGNALで変更可能 初期値1<ロックする> )
+    
 2019/12/23 からの変更点
 
   ・シグナル取得処理の最適化

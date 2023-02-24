@@ -151,6 +151,7 @@
     <ClInclude Include="..\BonDriver_FSUSB2i\BonTuner_FSUSB2i.h" />
     <ClInclude Include="..\BonDriver_FSUSB2N\BonTuner_FSUSB2N.h" />
     <ClInclude Include="..\BonDriver_uSUNpTV\BonTuner_uSUNpTV.h" />
+    <ClInclude Include="..\bonhybrid.h" />
     <ClInclude Include="..\em2874.h" />
     <ClInclude Include="..\em287x.h" />
     <ClInclude Include="..\em287x_priv.h" />
@@ -189,6 +190,12 @@
       <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="..\BonDriver_uSUNpTV\BonTuner_uSUNpTV.cpp">
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+    </ClCompile>
+    <ClCompile Include="..\bonhybrid.cpp">
       <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
       <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
       <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>

@@ -1,7 +1,7 @@
-//# 2019-12-21
+//# 2020-1-3
 //#   BonDriver_FSUSB2N.dll / BonDriver_FSUSB2i.dll / BonDriver_uSUNpTV.dll
 //#   Hybrid dll entry point.
-//# Coded by 2019 LVhJPic0JSk5LiQ1ITskKVk9UGBg
+//# Coded by 2019-2020 LVhJPic0JSk5LiQ1ITskKVk9UGBg
 #include "stdafx.h"
 #include <cstring>
 #include <string>
@@ -42,14 +42,10 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH:
 		FSIdentify(hModule) ;
-		FSUSB2N::CBonTuner::m_hModule = hModule;
-		FSUSB2i::CBonTuner::m_hModule = hModule;
-		uSUNpTV::CBonTuner::m_hModule = hModule;
+		CBonFSHybrid::m_hModule = hModule;
 		break;
 	case DLL_PROCESS_DETACH:
-		if(FSUSB2N::CBonTuner::m_pThis)FSUSB2N::CBonTuner::m_pThis->Release();
-		if(FSUSB2i::CBonTuner::m_pThis)FSUSB2i::CBonTuner::m_pThis->Release();
-		if(uSUNpTV::CBonTuner::m_pThis)uSUNpTV::CBonTuner::m_pThis->Release();
+		if(CBonFSHybrid::m_pThis)CBonFSHybrid::m_pThis->Release();
 		break;
 	}
 	return TRUE;
@@ -58,19 +54,14 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 #pragma warning( disable : 4273 )
 extern "C" __declspec(dllexport) IBonDriver *CreateBonDriver()
 {
+	if (CBonFSHybrid::m_pThis) return CBonFSHybrid::m_pThis;
 	switch(FSHybrid) {
 		case BONDRIVER_FSUSB2N:
-			return (FSUSB2N::CBonTuner::m_pThis)?
-				FSUSB2N::CBonTuner::m_pThis:
-				((IBonDriver*) new FSUSB2N::CBonTuner);
+			return ((IBonDriver*) new FSUSB2N::CBonTuner);
 		case BONDRIVER_FSUSB2I:
-			return (FSUSB2i::CBonTuner::m_pThis)?
-				FSUSB2i::CBonTuner::m_pThis:
-				((IBonDriver*) new FSUSB2i::CBonTuner);
+			return ((IBonDriver*) new FSUSB2i::CBonTuner);
 		case BONDRIVER_USUNPTV:
-			return (uSUNpTV::CBonTuner::m_pThis)?
-				uSUNpTV::CBonTuner::m_pThis:
-				((IBonDriver*) new uSUNpTV::CBonTuner);
+			return ((IBonDriver*) new uSUNpTV::CBonTuner);
 	}
 	return NULL ;
 }

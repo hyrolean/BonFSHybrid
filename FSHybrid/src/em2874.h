@@ -28,12 +28,22 @@ typedef signed int		int32_t;
 #define EM2874_TS1_FILTER_ENABLE  0x02
 #define EM2874_TS1_NULL_DISCARD   0x04
 
-#define EM2874_TS
+//#define EM2874_TS
 
 #ifdef EM2874_TS
     #define USBBULK_XFERSIZE	(0xBC00)
     #define RINGBUFF_SIZE	48
     #define NUM_IOHANDLE	36
+#endif
+
+#define EM2874_USBEP
+
+#ifdef EM2874_USBEP
+extern "C" {
+#include "types_u.h"
+#include "tsbuff.h"
+}
+    #define USBBULK_XFERSIZE	TS_PacketSize
 #endif
 
 
@@ -82,8 +92,8 @@ private:
 public:
 	EM2874Device (HANDLE hDev);
 	~EM2874Device ();
-	static EM2874Device* AllocDevice(int &idx);
-	bool initDevice ();
+	static EM2874Device* AllocDevice(HANDLE hDev,HANDLE hUsbDev);
+	bool initDevice (HANDLE hUsbDev);
 	bool initDevice2 ();
 
 	uint8_t readReg (const uint8_t idx);
@@ -114,5 +124,11 @@ public:
 	int DispatchTSRead();
 	HANDLE GetHandle();
     int GetTsBuffIndex();
+#endif
+
+#ifdef EM2874_USBEP
+    static int USBEndPointStartStopFunc(void * const  dev, const int start);
+    void SetupUSBEndPoint(usb_endpoint_st *usb_ep) ;
+    void CleanupUSBEndPoint(usb_endpoint_st *usb_ep) ;
 #endif
 };

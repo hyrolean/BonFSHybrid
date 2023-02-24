@@ -3,9 +3,6 @@
 #include <setupapi.h>
 #include <strsafe.h>
 
-// ドライバインスタンスのGUID
-DEFINE_GUID( GUID_WINUSB_DRIVER,	0xb35924d6L, 0x3e09, 0x4a9e, 0x97, 0x82, 0x55, 0x24, 0xa4, 0xb7, 0x9b, 0xa4 );
-
 inline uint8_t ICC_checkSum (const uint8_t* data, int len)
 {
 	uint8_t sum = 0;
@@ -48,10 +45,12 @@ EM2874Device::EM2874Device(HANDLE hDev)
 
 EM2874Device::~EM2874Device ()
 {
+#ifdef EM2874_TS
 	if (hTsEvent) {
 		::CloseHandle(hTsEvent);
 		hTsEvent = NULL;
 	}
+#endif
 	if ( usbHandle ) {
 		writeReg(EM2874_REG_TS_ENABLE, 0);
 		::WinUsb_SetCurrentAlternateSetting( usbHandle, 0 );
@@ -62,78 +61,30 @@ EM2874Device::~EM2874Device ()
 			writeReg(EM2874_REG_CAS_MODE1, 0x0);
 			writeReg(0x0C, 0x0);
 		}
-		::WinUsb_Free( usbHandle );
-	}
-	if ( this->dev ) {
-		::CloseHandle( this->dev );
 	}
 }
 
-EM2874Device* EM2874Device::AllocDevice(int &idx)
+EM2874Device* EM2874Device::AllocDevice(HANDLE hDev, HANDLE hUsbDev)
 {
-	DWORD dwRet;
-	ULONG length;
-
-	HANDLE hDev = INVALID_HANDLE_VALUE;
-
-	// デバイス情報セットのハンドル取得
-	HDEVINFO deviceInfo = SetupDiGetClassDevs((GUID *)&GUID_WINUSB_DRIVER, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-	if(deviceInfo == INVALID_HANDLE_VALUE) return NULL;
-
-	SP_DEVICE_INTERFACE_DATA interfaceData;
-	interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-	const int idmax = (idx<0) ? 20 : idx+1 ;
-	if(idx<0) idx=0 ;
-
-	for(; idx < idmax; idx++ ) {
-		// デバイスインタフェースを列挙
-		if( FALSE == SetupDiEnumDeviceInterfaces(deviceInfo, NULL, (GUID *)&GUID_WINUSB_DRIVER, idx, &interfaceData) ) {
-			dwRet = ::GetLastError();
-			//if(dwRet == ERROR_NO_MORE_ITEMS) break;
-			break;
-		}
-
-		ULONG requiredLength = 0;
-		SetupDiGetDeviceInterfaceDetail(deviceInfo, &interfaceData, NULL, 0, &requiredLength, NULL);
-		// バッファを確保
-		requiredLength += sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA) + sizeof(TCHAR);
-		PSP_DEVICE_INTERFACE_DETAIL_DATA detailData = (PSP_DEVICE_INTERFACE_DETAIL_DATA)GlobalAlloc(GMEM_FIXED, requiredLength);
-		detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
-		// デバイスのパス名を取得
-		length = requiredLength;
-		if(SetupDiGetDeviceInterfaceDetail(deviceInfo, &interfaceData, detailData, length, &requiredLength, NULL) ) {
-			// path取得成功
-			hDev = ::CreateFile(detailData->DevicePath, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
-			if( hDev == INVALID_HANDLE_VALUE ) {
-				//dwRet = ::GetLastError();
-				//if (dwRet == ERROR_ACCESS_DENIED) 使用中
-			}else{
-				GlobalFree(detailData);
-				break;
-			}
-		}
-		GlobalFree(detailData);
-	}
-	SetupDiDestroyDeviceInfoList(deviceInfo);
-
-	if (hDev == INVALID_HANDLE_VALUE) return NULL;
+	if (!hDev) return NULL;
 
 	EM2874Device *pDev = new EM2874Device();
 	pDev->dev = hDev;
-	if(! pDev->initDevice()) {
+	if(! pDev->initDevice(hUsbDev)) {
 		delete pDev;
 		return NULL;
 	}
 	return pDev;
 }
 
-bool EM2874Device::initDevice ()
+bool EM2874Device::initDevice (HANDLE hUsbDev)
 {
 	uint8_t val;
 
-	if(FALSE == ::WinUsb_Initialize ( this->dev, &usbHandle ))
-		return false;
+	if (!hUsbDev) return false;
+
+    usbHandle = hUsbDev ;
+
 	if( readReg(EM28XX_REG_GPIO, &val) && writeReg(EM28XX_REG_GPIO, val & ~0x1U)
 	){
 		{
@@ -638,3 +589,41 @@ int EM2874Device::GetTsBuffIndex()
 { return TsBuffIndex; }
 
 #endif
+
+#ifdef EM2874_USBEP
+
+int EM2874Device::USBEndPointStartStopFunc(void * const  dev, const int start)
+{
+	EM2874Device *this_ = static_cast<EM2874Device*>(dev) ;
+	if(start) {
+		this_->writeReg( EM2874_REG_TS_ENABLE, EM2874_TS1_CAPTURE_ENABLE | EM2874_TS1_NULL_DISCARD );
+	}else {
+		this_->writeReg( EM2874_REG_TS_ENABLE, 0 );
+	}
+	return 0 ;
+}
+
+void EM2874Device::SetupUSBEndPoint(usb_endpoint_st *usb_ep)
+{
+	usb_ep->dev=this ;
+	usb_ep->fd=usbHandle ;
+	usb_ep->endpoint=EM2874_EP_TS1 ;
+	usb_ep->xfer_size=USBBULK_XFERSIZE ;
+	usb_ep->startstopFunc = USBEndPointStartStopFunc;
+}
+
+void EM2874Device::CleanupUSBEndPoint(usb_endpoint_st *usb_ep)
+{
+	if (usb_ep&&usb_ep->dev == this) {
+		if(usb_ep->startstopFunc==USBEndPointStartStopFunc)
+			USBEndPointStartStopFunc(this, 0);
+		usb_ep->dev = NULL;
+		usb_ep->fd = NULL;
+		usb_ep->endpoint = 0;
+		usb_ep->xfer_size = 0;
+		usb_ep->startstopFunc = NULL;
+	}
+}
+
+#endif
+

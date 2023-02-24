@@ -339,6 +339,10 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
+				RelativePath="..\bonhybrid.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\BonTuner_FSUSB2N.cpp"
 				>
 			</File>
@@ -399,6 +403,78 @@
 				>
 			</File>
 			<File
+				RelativePath="..\message.c"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\osdepend.c"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="..\pryutil.cpp"
 				>
 			</File>
@@ -443,7 +519,87 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath=".\stdafx2.c"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="1"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="1"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="1"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="1"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\tsthread.c"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="..\twindbg.h"
+				>
+			</File>
+			<File
+				RelativePath="..\usbdevfile.cpp"
 				>
 			</File>
 		</Filter>
@@ -452,6 +608,10 @@
 			Filter="h;hpp;hxx;hm;inl;inc;xsd"
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
+			<File
+				RelativePath="..\bonhybrid.h"
+				>
+			</File>
 			<File
 				RelativePath=".\BonTuner_FSUSB2N.h"
 				>
@@ -465,7 +625,31 @@
 				>
 			</File>
 			<File
+				RelativePath="..\message.h"
+				>
+			</File>
+			<File
+				RelativePath="..\osdepend.h"
+				>
+			</File>
+			<File
 				RelativePath=".\stdafx.h"
+				>
+			</File>
+			<File
+				RelativePath="..\tsbuff.h"
+				>
+			</File>
+			<File
+				RelativePath="..\tsthread.h"
+				>
+			</File>
+			<File
+				RelativePath="..\types_u.h"
+				>
+			</File>
+			<File
+				RelativePath="..\usbdevfile.h"
 				>
 			</File>
 		</Filter>

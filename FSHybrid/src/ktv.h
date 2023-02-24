@@ -16,6 +16,7 @@ public:
 	virtual void SetFrequency (unsigned int freq_khz) = 0;
 	virtual void InitDeMod () = 0;
 	virtual void ResetDeMod () = 0;
+    virtual bool SleepTuner () = 0;
 	uint8_t DeMod_GetSequenceState();
 	unsigned int DeMod_GetQuality();
 	unsigned DeMod_GetBER(int *pVal);
@@ -46,6 +47,7 @@ public:
 	void SetFrequency (unsigned int freq_khz);
 	void InitDeMod ();
 	void ResetDeMod ();
+    bool SleepTuner () { return false ; }
 
 private:
 	void Tuner_RegWrite (const uint8_t offset, const int len);
@@ -64,6 +66,7 @@ public:
 	~Ktv2Device();
 
 	void InitTuner ();
+    bool SleepTuner();
 	void SetFrequency (unsigned int freq_khz);
 	void InitDeMod ();
 	void ResetDeMod ();

@@ -245,6 +245,9 @@ CAsyncFifo::CAsyncFifo(
         BufferPool[i].resize(PacketSize);
         EmptyIndices.push(i) ;
     }
+#ifdef ASYNCFIFO_HEAPBUFFERPOOL
+    //HeapCompact(Heap, flag) ;
+#endif
     // アロケーションスレッド作成
     if(MaximumPool>TotalPool) {
       AllocThread = (HANDLE)_beginthreadex(NULL, 0, AllocThreadProc, this, CREATE_SUSPENDED, NULL) ;
@@ -484,9 +487,13 @@ unsigned int CAsyncFifo::AllocThreadProcMain ()
 				return 1;
 		}
 		if(doAllocate) {
+            bool failed=false ;
             do {
                 elock.unlock() ;
 				BufferPool[TotalPool].resize(PacketSize); // Allocating...
+                if(BufferPool[TotalPool].size()!=PacketSize) {
+                  failed = true ; break ;
+                }
                 elock.lock() ;
                 EmptyIndices.push_front(TotalPool++) ;
 				elock.unlock() ;
@@ -496,8 +503,11 @@ unsigned int CAsyncFifo::AllocThreadProcMain ()
 				elock.lock() ;
 			} while (Growable() && EmptyIndices.size() <= EmptyBorder );
             elock.unlock() ;
-            DBGOUT("Async FIFO allocation: total %d bytes grown.\r\n",
-				int((TotalPool)*PacketSize)) ;
+            if(failed)
+              DBGOUT("Async FIFO allocation: allocation failed!\r\n") ;
+            else
+              DBGOUT("Async FIFO allocation: total %d bytes grown.\r\n",
+  				  int((TotalPool)*PacketSize)) ;
         }
         if (Terminated) break;
     }

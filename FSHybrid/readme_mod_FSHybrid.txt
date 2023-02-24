@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2019/12/23
+BonDriver_FSHybrid.dll MOD @ 2020/1/3
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -30,6 +30,13 @@ BonDriver_FSHybrid.dll MOD @ 2019/12/23
 
 
   ※: xxxxxx は、任意の英数字
+
+
+■更新履歴
+
+2019/12/23 からの変更点
+
+  ・コードをリファクタリングしてバイナリサイズを約10KB削減
 
 
 ■使用制限

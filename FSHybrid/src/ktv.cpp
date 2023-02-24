@@ -28,7 +28,7 @@ KtvDevice::~KtvDevice()
 bool KtvDevice::DeMod_Write (const uint8_t idx, const uint8_t val)
 {
 	usbDev->writeReg(EM28XX_REG_I2C_CLK, 0x44);
-	uint8_t buf[] = {idx, val};
+    uint8_t buf[] = {idx, val};
 	return usbDev->writeI2C(DEMOD_ADDR, 2, buf, true);
 }
 
@@ -631,9 +631,8 @@ Ktv2Device::Ktv2Device (EM2874Device *pDev) : KtvDevice(pDev)
 
 Ktv2Device::~Ktv2Device()
 {
-	static uint8_t rData[] = { 0x01,0, 0x0f,0 };
 	if( usbDev != NULL ) {
-		Tuner_I2C_Write(rData, TBL_SZ(rData));	// enter standby mode
+		SleepTuner();
 	}
 }
 
@@ -650,6 +649,13 @@ void Ktv2Device::InitTuner ()
 	Tuner_I2C_Write(initData, TBL_SZ(initData));
 	miliWait(5);
 	Tuner_InitDone = true;
+}
+
+bool Ktv2Device::SleepTuner ()
+{
+	static uint8_t rData[] = { 0x01,0, 0x0f,0 };
+	Tuner_I2C_Write(rData, TBL_SZ(rData));	// enter standby mode
+    return true ;
 }
 
 void Ktv2Device::SetFrequency (unsigned int freq_khz)

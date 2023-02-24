@@ -215,7 +215,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	m_selectedTuner = tunerNum;
 	m_chCur = ch ;
 
-	FifoStart() ;
+	if(hasStream) FifoStart() ;
 
 	for(DWORD e=0,s=Elapsed();USUNPTV_CHANNEL_WAIT>e;e=Elapsed(s)) {
 		unsigned statData[4];

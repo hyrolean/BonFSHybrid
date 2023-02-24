@@ -1,0 +1,669 @@
+diff -uPr BonD_FSHybrid-20201009_mod10/readme_mod_FSHybrid.txt BonD_FSHybrid-20201009_mod10.1/readme_mod_FSHybrid.txt
+--- BonD_FSHybrid-20201009_mod10/readme_mod_FSHybrid.txt	2022-05-03 14:52:34.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/readme_mod_FSHybrid.txt	2022-08-11 13:28:35.000000000 +0900
+@@ -1,4 +1,4 @@
+-BonDriver_FSHybrid.dll MOD @ 2022/5/3
++BonDriver_FSHybrid.dll MOD @ 2022/8/11
+ 
+ ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
+ 
+@@ -34,6 +34,11 @@
+ 
+ ■更新履歴
+ 
++2022/5/3 からの変更点
++
++  ・アイソクロナス転送有効時に、チャンネルを切り替えたあとに稀にストリームが
++    ストール(停止)することのある現象を修正
++
+ 2021/12/7 からの変更点
+ 
+   ・各々のBonDriverをIBonTransponderインターフェイスに対応
+diff -uPr BonD_FSHybrid-20201009_mod10/src/BonDriver_FSHybrid/BonDriver.rc BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSHybrid/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod10/src/BonDriver_FSHybrid/BonDriver.rc	2022-05-03 14:49:07.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSHybrid/BonDriver.rc	2022-08-11 13:28:36.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2022,5,3
+- PRODUCTVERSION 0,2022,5,3
++ FILEVERSION 0,2022,8,11
++ PRODUCTVERSION 0,2022,8,11
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,7 +19,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+-            VALUE "FileVersion", "0,2022,5,3"
++            VALUE "FileVersion", "0,2022,8,11"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "Hybrid BonDriver for FSUSB2N/FSUSB2i/uSUNpTV (isoch support)"
+             VALUE "InternalName", "BonDriver_FSHybrid_isoch.dll"
+@@ -32,7 +32,7 @@
+             VALUE "ProductName", "BonDriver_FSHybrid"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2019-2022 inspired by trinity19683 2015-2016"
+-            VALUE "ProductVersion", "0,2022,5,3"
++            VALUE "ProductVersion", "0,2022,8,11"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod10/src/BonDriver_FSUSB2N/BonDriver.rc BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSUSB2N/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod10/src/BonDriver_FSUSB2N/BonDriver.rc	2022-05-03 14:49:07.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSUSB2N/BonDriver.rc	2022-08-11 13:28:36.000000000 +0900
+@@ -4,8 +4,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2022,5,3
+- PRODUCTVERSION 0,2022,5,3
++ FILEVERSION 0,2022,8,11
++ PRODUCTVERSION 0,2022,8,11
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -21,7 +21,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by WPjeGg6tSA"
+-            VALUE "FileVersion", "0,2022,5,3"
++            VALUE "FileVersion", "0,2022,8,11"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "BonDriver for FSUSB2N (isoch support)"
+             VALUE "InternalName", "BonDriver_FSUSB2N_isoch.dll"
+@@ -34,7 +34,7 @@
+             VALUE "ProductName", "BonDriver_FSUSB2N"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2014-2022 inspired by WPjeGg6tSA 2009-2012"
+-            VALUE "ProductVersion", "0,2022,5,3"
++            VALUE "ProductVersion", "0,2022,8,11"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod10/src/BonDriver_FSUSB2i/BonDriver.rc BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSUSB2i/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod10/src/BonDriver_FSUSB2i/BonDriver.rc	2022-05-03 14:49:07.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/src/BonDriver_FSUSB2i/BonDriver.rc	2022-08-11 13:28:36.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2022,5,3
+- PRODUCTVERSION 0,2022,5,3
++ FILEVERSION 0,2022,8,11
++ PRODUCTVERSION 0,2022,8,11
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -20,12 +20,12 @@
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+             VALUE "FileDescription", "BonDriver for FSUSB2i"
+-            VALUE "FileVersion", "0,2022,5,3"
++            VALUE "FileVersion", "0,2022,8,11"
+             VALUE "InternalName", "BonDriver_FSUSB2i.dll"
+             VALUE "LegalCopyright", "hyrolean-dtv 2018-2022 inspired by trinity19683 2015-2016"
+             VALUE "OriginalFilename", "BonDriver_FSUSB2i.dll"
+             VALUE "ProductName", "BonDriver_FSUSB2i"
+-            VALUE "ProductVersion", "0,2022,5,3"
++            VALUE "ProductVersion", "0,2022,8,11"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod10/src/BonDriver_uSUNpTV/BonDriver.rc BonD_FSHybrid-20201009_mod10.1/src/BonDriver_uSUNpTV/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod10/src/BonDriver_uSUNpTV/BonDriver.rc	2022-05-03 14:49:08.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/src/BonDriver_uSUNpTV/BonDriver.rc	2022-08-11 13:28:36.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2022,5,3
+- PRODUCTVERSION 0,2022,5,3
++ FILEVERSION 0,2022,8,11
++ PRODUCTVERSION 0,2022,8,11
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,7 +19,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+-            VALUE "FileVersion", "0,2022,5,3"
++            VALUE "FileVersion", "0,2022,8,11"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "BonDriver for uSUNpTV (isoch support)"
+             VALUE "InternalName", "BonDriver_uSUNpTV_isoch.dll"
+@@ -32,7 +32,7 @@
+             VALUE "ProductName", "BonDriver_uSUNpTV"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2019-2022 inspired by trinity19683 2016"
+-            VALUE "ProductVersion", "0,2022,5,3"
++            VALUE "ProductVersion", "0,2022,8,11"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod10/src/tsthread.c BonD_FSHybrid-20201009_mod10.1/src/tsthread.c
+--- BonD_FSHybrid-20201009_mod10/src/tsthread.c	2022-05-03 14:57:52.000000000 +0900
++++ BonD_FSHybrid-20201009_mod10.1/src/tsthread.c	2022-08-11 13:39:37.000000000 +0900
+@@ -16,6 +16,7 @@
+ #include "tsbuff.h"
+ #include "tsthread.h"
+ 
++
+ #define STRICTLY_CHECK_EVENT_SIGNALS
+ //#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES
+ //#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES_ALL
+@@ -46,6 +47,7 @@
+ DWORD USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT = 5000UL ;
+ BOOL USBPIPEPOLICY_RESET_PIPE_ON_RESUME = FALSE ;
+ 
++#define ISOCH_IO_INDEX_DROP_MASK 0x40000000
+ 
+ struct TSIO_CONTEXT {
+ #ifdef INCLUDE_ISOCH_XFER
+@@ -60,8 +62,8 @@
+ 	HANDLE hThreads[2];    //# handles to thread data
+ 	unsigned char loop_flags ; //# ( 1: reap, 2: submit, 3: both ) <<2: init
+ 	unsigned char volatile  flags;
+-	/* if 0x01 flagged, issue a new request.
+-	   if 0x02 flagged, cancel requests and stop thread.
++	/* if 0x01U flagged, issue a new request.
++	   if 0x02U flagged, cancel requests and stop thread.
+ 	*/
+ 	const struct usb_endpoint_st*  pUSB;
+ 	char* buffer;    //# data buffer (in heap memory)
+@@ -95,7 +97,7 @@
+ };
+ 
+   static int __inline isCritical(struct tsthread_param* const ps) {
+-	return !(ps->flags & 0x01)||HasSignal(ps->hTsRestart) ;
++	return !(ps->flags & 0x01U)||HasSignal(ps->hTsRestart) ;
+   }
+ 
+   static void __inline lockWinUsb(struct tsthread_param* const ps,int lock) {
+@@ -137,8 +139,19 @@
+ 			ps->ri = ps->si ;
+ 
+ 		}
+-	}
+ 
++	}else { //# Isochronous
++
++		if(ps->total_submit>0) {
++			for (i = 0;i < ps->io_num;i++) {
++				struct TSIO_CONTEXT* pContext = &ps->ioContext[i];
++				if(pContext->index>=0) {
++					pContext->index |= ISOCH_IO_INDEX_DROP_MASK ;
++				}
++			}
++		}
++
++	}
+ 
+ 	#if 1
+ 	if(ps->tsfifo) {
+@@ -158,7 +171,7 @@
+ 	#endif
+ 
+ 	WinUsb_FlushPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
+-	ps->flags &= ~0x10; //# reset isochronous continuous status
++	ps->flags &= ~0x10U; //# reset isochronous continuous status
+ 
+ 	lockWinUsb(ps,0);
+ 	LeaveCriticalSection(&ps->csTsExclusive);
+@@ -220,19 +233,19 @@
+ 	assert( !isWBack || (isWBack && !hasWThrough) ) ;
+ 
+ 	//# bulk loop
+-	while(!(ps->flags&0x02)) {
++	while(!(ps->flags&0x02U)) {
+ 
+ #ifndef INCLUDE_ISOCH_XFER
+ 		//# shutdown ( isoch is not supported )
+ 		if (ps->pUSB->endpoint & 0x100) { //# Isochronous
+-			if(ps->flags & 0x01) {
++			if(ps->flags & 0x01U) {
+ 				tsthread_stop(ps);
+ 				continue ;
+ 			}
+ 		}
+ #endif
+ 		//# stop
+-		if (!(ps->flags & 0x01)) {
++		if (!(ps->flags & 0x01U)) {
+ 			EnterCriticalSection(&ps->csTsExclusive);
+ 			ps->loop_flags |= loop_model ;  //# loop deactivate 0 -> 1
+ 			if((ps->loop_flags&3)==3) {
+@@ -246,28 +259,35 @@
+ 
+ 		//# restart
+ 		if(HasSignal(ps->hTsRestart)) {
++			BOOL wait = FALSE ;
+ 			EnterCriticalSection(&ps->csTsExclusive);
+-			ps->loop_flags |= loop_model ;  //# loop deactivate 0 -> 1
+-			if((loop_model&2)&&(ps->loop_flags&3)==3) {
+-				tsthread_purgeURB(ps) ;
+-				ResetEvent(ps->hTsRestart) ;
+-				SetEvent(ps->hTsAvailable) ;
+-				LeaveCriticalSection(&ps->csTsExclusive);
+-			}else {
+-				LeaveCriticalSection(&ps->csTsExclusive);
+-				HRWaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT,0) ;
++			if(ps->flags & 0x01U) {
++				ps->loop_flags |= loop_model ;  //# loop deactivate 0 -> 1
++				if((loop_model&2)&&(ps->loop_flags&3)==3) {
++					tsthread_purgeURB(ps) ;
++					ResetEvent(ps->hTsRestart) ;
++					SetEvent(ps->hTsAvailable) ;
++				}else
++					wait = TRUE ;
+ 			}
++			LeaveCriticalSection(&ps->csTsExclusive);
++			if(wait) HRWaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT,0) ;
+ 			continue;
+ 		}else if(ps->loop_flags&loop_model) {
++			BOOL sig = TRUE ;
+ 			EnterCriticalSection(&ps->csTsExclusive);
+-			ps->loop_flags &= ~loop_model ; //# loop activate 1 -> 0
++			if(ps->flags & 0x01U) {
++				sig = HasSignal(ps->hTsRestart) ;
++				if(!sig) ps->loop_flags &= ~loop_model ; //# loop activate 1 -> 0
++			}
+ 			LeaveCriticalSection(&ps->csTsExclusive);
++			if(sig) continue;
+ 		}
+ 
+ 		//# reaping loop model
+ 		if( loop_model&1 ) {
+ 
+-			if(duplex && ps->total_submit<(ps->flags&0x10?ps->io_limit:MIN_IOLIMIT)) {
++			if(duplex && ps->total_submit<(ps->flags&0x10U?ps->io_limit:MIN_IOLIMIT)) {
+ 				HANDLE events[2];
+ 				events[0]=ps->hTsSubmit;
+ 				events[1]=ps->hTsRestart ;
+@@ -375,12 +395,14 @@
+ 							{
+ 								//# failed
+ 								bytesRead = 0;
+-								//ps->flags &= ~0x10;
++								ps->flags &= ~0x10U;
+ 								warn_msg(dRet, "reapURB%u failed", ps->ri);
+ 							}
+ 						}
+ 						if(pContext->index>=0) {
+ 							if (ps->pUSB->endpoint & 0x100) {
++								BOOL drop = (pContext->index & ISOCH_IO_INDEX_DROP_MASK) ? TRUE : FALSE ;
++								if(drop) pContext->index &= ~ISOCH_IO_INDEX_DROP_MASK ;
+ #ifdef INCLUDE_ISOCH_XFER
+ 								EnterCriticalSection(&ps->csTsExclusive) ;
+ 								if(hasWThrough && pContext->index==ps->buff_pop) {
+@@ -400,7 +422,7 @@
+ 										if(n&&sz==ps->buff_unitSize)
+ 											amount+=sz ;
+ 										else {
+-											if(amount+sz>0)
++											if(amount+sz>0 && !drop)
+ 												pTSFifo->writeThrough(p, amount+sz, pTSFifo->arg) ;
+ 											p+=amount+ps->buff_unitSize, amount=0 ;
+ 										}
+@@ -426,55 +448,59 @@
+ 								}else {
+ 									LeaveCriticalSection(&ps->csTsExclusive) ;
+ #if defined(_WIN32) && !defined(_WIN64)
+-
+-									int stride = (char*) &pContext->isochFrameDesc[1]
+-										- (char*) &pContext->isochFrameDesc[0] ;
+-									void* sp_ = &pContext->isochFrameDesc[0].Length ;
+-									void* dp_ = &ps->actual_length[pContext->index] ;
+-									int dx_ = (char*) &pContext->isochFrameDesc[0].Status
+-										- (char*) &pContext->isochFrameDesc[0].Length ;
+-									int errors = 0 ;
+-									_asm {
+-										mov ecx, frames
+-										mov edi, dp_
+-										cld
+-										cmp bRet, 0
+-										je lb3
+-										xor ebx, ebx
+-										mov esi, sp_
+-										mov eax, stride
+-										mov edx, dx_
+-									lb1:
+-										cmp dword ptr [esi+edx], 0
+-										jne lb2
+-										movsd
+-										lea esi, [esi+eax-4]
+-										dec ecx
+-										jnz lb1
+-										jmp lb4
+-									lb2:
+-										mov dword ptr [edi], 0
+-										lea edi, [edi+4]
+-										lea esi, [esi+eax]
+-										inc ebx
+-										dec ecx
+-										jnz lb1
+-										jmp lb4
+-									lb3:
+-										mov ebx, ecx
+-										xor eax, eax
+-										rep stosd
+-									lb4:
+-										mov errors, ebx
++									if(drop) {
++										register int *pLen = &ps->actual_length[pContext->index];
++										__stosd(pLen,0,frames);
++									}else {
++										int stride = (char*) &pContext->isochFrameDesc[1]
++											- (char*) &pContext->isochFrameDesc[0] ;
++										void* sp_ = &pContext->isochFrameDesc[0].Length ;
++										void* dp_ = &ps->actual_length[pContext->index] ;
++										int dx_ = (char*) &pContext->isochFrameDesc[0].Status
++											- (char*) &pContext->isochFrameDesc[0].Length ;
++										int errors = 0 ;
++										_asm {
++											mov ecx, frames
++											mov edi, dp_
++											cld
++											cmp bRet, 0
++											je lb3
++											xor ebx, ebx
++											mov esi, sp_
++											mov eax, stride
++											mov edx, dx_
++										lb1:
++											cmp dword ptr [esi+edx], 0
++											jne lb2
++											movsd
++											lea esi, [esi+eax-4]
++											dec ecx
++											jnz lb1
++											jmp lb4
++										lb2:
++											mov dword ptr [edi], 0
++											lea edi, [edi+4]
++											lea esi, [esi+eax]
++											inc ebx
++											dec ecx
++											jnz lb1
++											jmp lb4
++										lb3:
++											mov ebx, ecx
++											xor eax, eax
++											rep stosd
++										lb4:
++											mov errors, ebx
++										}
++										if(errors>0)
++											warn_msg(dRet, "reapURB%u(%u)",ps->ri, errors);
+ 									}
+-									if(errors>0)
+-										warn_msg(dRet, "reapURB%u(%u)",ps->ri, errors);
+ #else
+ 									register int n,*pLen = &ps->actual_length[pContext->index];
+ 									register const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[frames-1];
+-									if(!bRet) {
++									if(!bRet||drop) {
+ 										__stosd(pLen,0,frames);
+-										warn_msg(dRet, "reapURB%u(%u)",ps->ri, frames);
++										if(!drop) warn_msg(dRet, "reapURB%u(%u)",ps->ri, frames);
+ 									}
+ 									else for (n = frames ; n ; n--, pDesc--) {
+ 										if (pDesc->Status) {
+@@ -486,7 +512,7 @@
+ 									}
+ #endif
+ 								}
+-								if(bRet) SetEvent(ps->hTsAvailable) ;
++								if(bRet&&!drop) SetEvent(ps->hTsAvailable) ;
+ #endif
+ 							}else {
+ 								if (isWBack)
+@@ -540,7 +566,7 @@
+ 		//# submitting loop model
+ 		if( loop_model&2 ) {
+ 
+-			if( duplex && ps->total_submit>=(ps->flags&0x10?ps->io_num:MIN_IOLIMIT) ) {
++			if( duplex && ps->total_submit>=(ps->flags&0x10U?ps->io_num:MIN_IOLIMIT) ) {
+ 				HANDLE events[2];
+ 				events[0]=ps->hTsReap;
+ 				events[1]=ps->hTsRestart ;
+@@ -553,9 +579,9 @@
+ 			if (HasSignal(ps->hTsRestart)) continue;
+ 
+ 			//# submit
+-			if( ps->total_submit<ps->io_num && (ps->flags & 0x01) ) {
++			if( ps->total_submit<ps->io_num && (ps->flags & 0x01U) ) {
+ 				DWORD tick = GetTickCount() ;
+-				int fulfill = duplex || !(ps->flags&0x10) ;
++				int fulfill = duplex || !(ps->flags&0x10U) ;
+ 				void *buffer;
+ 				DWORD lnTransfered;
+ 				int num_empties=0,max_empties=ps->io_num;
+@@ -662,14 +688,14 @@
+ 					if(isCritical(ps)) {
+ 						bRet=FALSE ;
+ 						dRet=ERROR_OPERATION_ABORTED ;
+-					}else{
++					}else {
+ 						if (ps->pUSB->endpoint & 0x100) { //# Isochronous
+ #ifdef INCLUDE_ISOCH_XFER
+ 							bRet = WinUsb_ReadIsochPipeAsap(
+ 								ps->hIsochBuffer,
+ 								ps->buff_push * ps->buff_unitSize, /*offset*/
+ 								frames * ps->buff_unitSize,  /*length*/
+-								ps->flags & 0x10 ? TRUE: FALSE, /*continuous*/
++								ps->flags & 0x10U ? TRUE: FALSE, /*continuous*/
+ 								frames, pContext->isochFrameDesc,
+ 								&(pContext->ol));
+ 							dRet = GetLastError();
+@@ -691,7 +717,7 @@
+ 							ps->actual_length[ps->buff_push] = last_state;
+ 						ResetEvent(ps->hTsEvents[ps->si]);
+ 						pContext->index = -1;
+-						if(ps->flags&0x10) ps->flags &= ~0x10; //# not cont
++						if(ps->flags&0x10U) ps->flags &= ~0x10U; //# not cont
+ 					}else {
+ 						//# submitting succeeded
+ 						if(!isWBack) {
+@@ -726,7 +752,7 @@
+ 						if(duplex) LeaveCriticalSection(&ps->csTsExclusive) ;
+ 						SetEvent(ps->hTsSubmit) ;
+ 						submitted=TRUE;
+-						if(!(ps->flags&0x10)) ps->flags |= 0x10; //# cont
++						if(!(ps->flags&0x10U)) ps->flags |= 0x10U; //# cont
+ 					}
+ 					//# check submitting failed or not
+ 					if(!submitted) break ;
+@@ -847,7 +873,7 @@
+ 			ps->tsfifo = NULL ;
+ 	}
+ 	ps->pUSB = pusbep;
+-	ps->flags = 0;
++	ps->flags = 0x00U;
+ 	ps->buff_push = 0;
+ 	ps->buff_pop = 0;
+ 	ps->total_submit = 0;
+@@ -855,8 +881,20 @@
+ 	ps->si = 0;
+ #ifdef INCLUDE_ISOCH_XFER
+ 	ps->hIsochBuffer = NULL;
+-	if (pusbep->endpoint & 0x100)
++	if (pusbep->endpoint & 0x100) { //# Isochronous
+ 		DBGOUT("-*- ISOCHRONOUS TRANSFER MODE -*-\n") ;
++		if (!WinUsb_RegisterIsochBuffer(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
++			ps->buffer, ps->buff_size, &(ps->hIsochBuffer))) {
++			DWORD dwRet = GetLastError();
++			ps->hIsochBuffer = NULL;
++			warn_info(dwRet, "WinUsb_RegisterIsochBuffer failed");
++			DBGOUT("-*- Isoch Buffer Creation Failed -*-\n") ;
++		}else {
++			DBGOUT(
++				"Isoch buffer size = %d (unit size = %d, unit num = %d)\n",
++				ps->buff_size, ps->buff_unitSize, ps->buff_num);
++		}
++	}
+ #else
+ 	if (pusbep->endpoint & 0x100) { //# Isochronous
+ 		warn_msg(0, "Please change to BULK transfer mode :-P");
+@@ -944,77 +982,69 @@
+ void tsthread_destroy(const tsthread_ptr ptr)
+ {
+ 	int i;
+-	struct tsthread_param* const p = ptr;
++	struct tsthread_param* const ps = ptr;
+ 
+ 	tsthread_stop(ptr);
+-	p->flags |= 0x02;    //# canceled = T
+-	SetEvent(p->hTsRead);
+-	SetEvent(p->hTsAvailable);
+-	SetEvent(p->hTsReap);
+-	SetEvent(p->hTsSubmit);
++	ps->flags |= 0x02U;    //# canceled = T
++	SetEvent(ps->hTsRead);
++	SetEvent(ps->hTsAvailable);
++	SetEvent(ps->hTsReap);
++	SetEvent(ps->hTsSubmit);
+ 	for(i=0;i<2;i++) {
+-		if(p->hThreads[i]!=INVALID_HANDLE_VALUE) {
+-			if (HRWaitForSingleObject(p->hThreads[i],
++		if(ps->hThreads[i]!=INVALID_HANDLE_VALUE) {
++			if (HRWaitForSingleObject(ps->hThreads[i],
+ 					USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0) != WAIT_OBJECT_0) {
+ 				warn_msg(GetLastError(), "tsthread_destroy timeout(%d)",i);
+-				TerminateThread(p->hThreads[i], 0);
++				TerminateThread(ps->hThreads[i], 0);
+ 			}
+-			CloseHandle(p->hThreads[i]);
++			CloseHandle(ps->hThreads[i]);
+ 		}
+ 	}
+-	for (i = 0; i < p->io_num; i++)
+-		CloseHandle(p->hTsEvents[i]);
+-	CloseHandle(p->hTsAvailable);
+-	CloseHandle(p->hTsRead);
+-	CloseHandle(p->hTsRestart);
+-	CloseHandle(p->hTsStopped);
+-	CloseHandle(p->hTsLoopIn);
+-	CloseHandle(p->hTsReap);
+-	CloseHandle(p->hTsSubmit);
++	for (i = 0; i < ps->io_num; i++)
++		CloseHandle(ps->hTsEvents[i]);
++	CloseHandle(ps->hTsAvailable);
++	CloseHandle(ps->hTsRead);
++	CloseHandle(ps->hTsRestart);
++	CloseHandle(ps->hTsStopped);
++	CloseHandle(ps->hTsLoopIn);
++	CloseHandle(ps->hTsReap);
++	CloseHandle(ps->hTsSubmit);
+ #ifdef INCLUDE_ISOCH_XFER
+-	if(p->hIsochBuffer) {
+-		WinUsb_UnregisterIsochBuffer( p->hIsochBuffer );
+-		p->hIsochBuffer = NULL;
++	if(ps->hIsochBuffer) {
++		WinUsb_UnregisterIsochBuffer( ps->hIsochBuffer );
++		ps->hIsochBuffer = NULL;
+ 	}
+ #endif
+-	DeleteCriticalSection(&p->csTsExclusive);
++	DeleteCriticalSection(&ps->csTsExclusive);
+ 
+-	uHeapFree(p->buffer);
++	uHeapFree(ps->buffer);
+ }
+ 
+ void tsthread_start(const tsthread_ptr ptr)
+ {
+ 	struct tsthread_param* const ps = ptr;
++	BOOL stopped;
+ 
+ 	EnterCriticalSection(&ps->csTsExclusive) ;
+ 	lockWinUsb(ps,1);
+ 
+-	WinUsb_FlushPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
+-	ps->flags &= ~0x10 ; //# reset isochronous continuous status
++	ResetEvent(ps->hTsStopped);
++	ps->flags &= ~0x01U;    //# continue = F
+ 
+-#ifdef INCLUDE_ISOCH_XFER
+-	if( (ps->pUSB->endpoint & 0x100) && !ps->hIsochBuffer) { //# Isochronous
+-		if (!WinUsb_RegisterIsochBuffer(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
+-			ps->buffer, ps->buff_size, &(ps->hIsochBuffer))) {
+-			DWORD dwRet = GetLastError();
+-			ps->hIsochBuffer = NULL;
+-			warn_info(dwRet, "WinUsb_RegisterIsochBuffer failed");
+-			DBGOUT("-*- Isoch Buffer Creation Failed -*-\n") ;
+-		}else {
+-			DBGOUT(
+-				"Isoch buffer size = %d (unit size = %d, unit num = %d)\n",
+-				ps->buff_size, ps->buff_unitSize, ps->buff_num);
+-		}
+-	}
+-#endif
++	lockWinUsb(ps,0);
++	LeaveCriticalSection(&ps->csTsExclusive) ;
+ 
+-	SetEvent(ps->hTsRestart);
++	stopped = HRWaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0) == WAIT_OBJECT_0 ? TRUE : FALSE ;
++
++	EnterCriticalSection(&ps->csTsExclusive) ;
++	lockWinUsb(ps,1);
+ 
+-	ps->flags |= 0x01;    //# continue = T
+ 	if (ps->pUSB->startstopFunc)
+ 		ps->pUSB->startstopFunc(ps->pUSB->dev, 1);
+ 
+-	SetEvent(ps->hTsAvailable);
++	ps->flags |= 0x01U;    //# continue = T
++	if(!stopped) SetEvent(ps->hTsRestart);
++	else SetEvent(ps->hTsAvailable);
+ 
+ 	lockWinUsb(ps,0);
+ 	LeaveCriticalSection(&ps->csTsExclusive) ;
+@@ -1023,34 +1053,29 @@
+ void tsthread_stop(const tsthread_ptr ptr)
+ {
+ 	struct tsthread_param* const ps = ptr;
++	BOOL stopped;
+ 
+ 	EnterCriticalSection(&ps->csTsExclusive) ;
+-	lockWinUsb(ps,1);
+ 
+ 	ResetEvent(ps->hTsStopped);
+ 	ps->flags &= ~0x01U;    //# continue = F
+ 
+-	if(ps->pUSB->startstopFunc)
+-		ps->pUSB->startstopFunc(ps->pUSB->dev, 0);
+-#ifdef INCLUDE_ISOCH_XFER
+-	if(ps->hIsochBuffer) {
+-		WinUsb_UnregisterIsochBuffer( ps->hIsochBuffer );
+-		ps->hIsochBuffer = NULL;
+-	}
+-#endif
++	LeaveCriticalSection(&ps->csTsExclusive) ;
++
++	stopped = HRWaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0) == WAIT_OBJECT_0 ? TRUE : FALSE ;
++
++	EnterCriticalSection(&ps->csTsExclusive) ;
++	lockWinUsb(ps,1);
+ 
+-	if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
++	if(!(ps->pUSB->endpoint & 0x100) && stopped) { //# Bulk
+ 		WinUsb_AbortPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
+ 	}
+ 
+-	SetEvent(ps->hTsRestart) ;
++	if(ps->pUSB->startstopFunc)
++		ps->pUSB->startstopFunc(ps->pUSB->dev, 0);
+ 
+ 	lockWinUsb(ps,0);
+ 	LeaveCriticalSection(&ps->csTsExclusive) ;
+-
+-	if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
+-		HRWaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0);
+-	}
+ }
+ 
+ int tsthread_read(const tsthread_ptr tptr, void ** const ptr)

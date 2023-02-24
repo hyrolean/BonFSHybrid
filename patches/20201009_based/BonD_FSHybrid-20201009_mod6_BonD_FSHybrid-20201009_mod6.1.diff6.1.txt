@@ -1,0 +1,396 @@
+diff -uPr BonD_FSHybrid-20201009_mod6/readme_mod_FSHybrid.txt BonD_FSHybrid-20201009_mod6.1/readme_mod_FSHybrid.txt
+--- BonD_FSHybrid-20201009_mod6/readme_mod_FSHybrid.txt	2020-11-21 00:30:18.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/readme_mod_FSHybrid.txt	2020-11-22 23:22:28.000000000 +0900
+@@ -1,4 +1,4 @@
+-BonDriver_FSHybrid.dll MOD @ 2020/11/21
++BonDriver_FSHybrid.dll MOD @ 2020/11/22
+ 
+ ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
+ 
+@@ -36,6 +36,7 @@
+ 
+ 2020/11/3 からの変更点
+ 
++  ・iniファイルの TSTHREAD_NUMIO 項目に指定できる最大値を64から256に拡張[11/22]
+   ・iniファイルにTS循環スレッド用マルチタスク設定項目 TSTHREAD_DUPLEX を追加
+   ・iniファイルにUSBデバイスのアイドル時省電力機能を無効にするかどうかを決定す
+     るための項目 USBPOWERPOLICY_AVOID_SUSPEND を追加
+diff -uPr BonD_FSHybrid-20201009_mod6/sample/BonDriver_FSHybrid.ini BonD_FSHybrid-20201009_mod6.1/sample/BonDriver_FSHybrid.ini
+--- BonD_FSHybrid-20201009_mod6/sample/BonDriver_FSHybrid.ini	2020-11-21 00:30:18.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/sample/BonDriver_FSHybrid.ini	2020-11-22 23:22:28.000000000 +0900
+@@ -1,4 +1,4 @@
+-; BonDriver_FSHybrid.ini FS系BonDriverの共通項目 (2020/11/21)
++; BonDriver_FSHybrid.ini FS系BonDriverの共通項目 (2020/11/22)
+ ;
+ ;       各BonDriverの共通項目を変更する場合は、このファイルを編集して
+ ;     各BonDriverが存在するディレクトリ上に BonDriver_FSHybrid.ini として
+@@ -58,7 +58,7 @@
+ TSTHREAD_SUBMIT_TIMEOUT=50   ; バッファI/O待受エントリに費やす最大許容時間
+ 
+ ; TSストリーム循環スレッドのI/Oバッファ最大同時駆動数
+-TSTHREAD_NUMIO=24 ; [4～64] パケットxTSTHREAD_NUMIO の待受バッファ同時駆動
++TSTHREAD_NUMIO=24 ; [4～256] パケットxTSTHREAD_NUMIO の待受バッファ同時駆動
+ 
+ ; TSストリーム循環スレッドのI/O待受エントリ絶対保障バッファ駆動数
+ ; 要は、アクティブなI/O待受駆動数をTSTHREAD_SUBMIT_IOLIMIT以上に最低限維持する
+@@ -167,6 +167,17 @@
+ ;SpaceArrangement=UHF,AUX,BS,CS110
+ 
+ 
++  ; -*- benchmark -*- <ultra heavy realtime settings>
++
++  ; TSCACHING_LEGACY=y
++  ; TSCACHING_BULKPACKETSIZE=188*3
++  ; TSCACHING_DROPNULLPACKETS=n
++  ; TSTHREAD_PRIORITY=THREAD_PRIORITY_TIME_CRITICAL
++  ; TSTHREAD_DUPLEX=y
++  ; TSTHREAD_NUMIO=256
++  ; TSTHREAD_SUBMIT_IOLIMIT=8
++
++
+ [Channels]
+ ; ここにレジストリのチャンネル情報と同じ形式の記述を行うことによりレジストリに
+ ; チャンネル情報を登録しなくてもAUXチューナー空間のチャンネル情報として登録する
+diff -uPr BonD_FSHybrid-20201009_mod6/src/BonDriver_FSHybrid/BonDriver.rc BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSHybrid/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod6/src/BonDriver_FSHybrid/BonDriver.rc	2020-11-21 00:30:20.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSHybrid/BonDriver.rc	2020-11-22 07:17:48.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2020,11,21
+- PRODUCTVERSION 0,2020,11,21
++ FILEVERSION 0,2020,11,22
++ PRODUCTVERSION 0,2020,11,22
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,7 +19,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+-            VALUE "FileVersion", "0,2020,11,21"
++            VALUE "FileVersion", "0,2020,11,22"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "Hybrid BonDriver for FSUSB2N/FSUSB2i/uSUNpTV (isoch support)"
+             VALUE "InternalName", "BonDriver_FSHybrid_isoch.dll"
+@@ -32,7 +32,7 @@
+             VALUE "ProductName", "BonDriver_FSHybrid"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2019-2020 inspired by trinity19683 2015-2016"
+-            VALUE "ProductVersion", "0,2020,11,21"
++            VALUE "ProductVersion", "0,2020,11,22"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod6/src/BonDriver_FSUSB2N/BonDriver.rc BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSUSB2N/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod6/src/BonDriver_FSUSB2N/BonDriver.rc	2020-11-21 00:30:20.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSUSB2N/BonDriver.rc	2020-11-22 07:17:48.000000000 +0900
+@@ -4,8 +4,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2020,11,21
+- PRODUCTVERSION 0,2020,11,21
++ FILEVERSION 0,2020,11,22
++ PRODUCTVERSION 0,2020,11,22
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -21,7 +21,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by WPjeGg6tSA"
+-            VALUE "FileVersion", "0,2020,11,21"
++            VALUE "FileVersion", "0,2020,11,22"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "BonDriver for FSUSB2N (isoch support)"
+             VALUE "InternalName", "BonDriver_FSUSB2N_isoch.dll"
+@@ -34,7 +34,7 @@
+             VALUE "ProductName", "BonDriver_FSUSB2N"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2014-2020 inspired by WPjeGg6tSA 2009-2012"
+-            VALUE "ProductVersion", "0,2020,11,21"
++            VALUE "ProductVersion", "0,2020,11,22"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod6/src/BonDriver_FSUSB2i/BonDriver.rc BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSUSB2i/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod6/src/BonDriver_FSUSB2i/BonDriver.rc	2020-11-21 00:30:20.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/BonDriver_FSUSB2i/BonDriver.rc	2020-11-22 07:17:48.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2020,11,21
+- PRODUCTVERSION 0,2020,11,21
++ FILEVERSION 0,2020,11,22
++ PRODUCTVERSION 0,2020,11,22
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -20,12 +20,12 @@
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+             VALUE "FileDescription", "BonDriver for FSUSB2i"
+-            VALUE "FileVersion", "0,2020,11,21"
++            VALUE "FileVersion", "0,2020,11,22"
+             VALUE "InternalName", "BonDriver_FSUSB2i.dll"
+             VALUE "LegalCopyright", "hyrolean-dtv 2018-2020 inspired by trinity19683 2015-2016"
+             VALUE "OriginalFilename", "BonDriver_FSUSB2i.dll"
+             VALUE "ProductName", "BonDriver_FSUSB2i"
+-            VALUE "ProductVersion", "0,2020,11,21"
++            VALUE "ProductVersion", "0,2020,11,22"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod6/src/BonDriver_uSUNpTV/BonDriver.rc BonD_FSHybrid-20201009_mod6.1/src/BonDriver_uSUNpTV/BonDriver.rc
+--- BonD_FSHybrid-20201009_mod6/src/BonDriver_uSUNpTV/BonDriver.rc	2020-11-21 00:30:20.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/BonDriver_uSUNpTV/BonDriver.rc	2020-11-22 07:17:48.000000000 +0900
+@@ -2,8 +2,8 @@
+ 
+ LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
+ 1 VERSIONINFO
+- FILEVERSION 0,2020,11,21
+- PRODUCTVERSION 0,2020,11,21
++ FILEVERSION 0,2020,11,22
++ PRODUCTVERSION 0,2020,11,22
+  FILEFLAGSMASK 0x17L
+ #ifdef _DEBUG
+  FILEFLAGS 0x1L
+@@ -19,7 +19,7 @@
+         BLOCK "041104b0"
+         BEGIN
+             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
+-            VALUE "FileVersion", "0,2020,11,21"
++            VALUE "FileVersion", "0,2020,11,22"
+ #ifdef INCLUDE_ISOCH_XFER
+             VALUE "FileDescription", "BonDriver for uSUNpTV (isoch support)"
+             VALUE "InternalName", "BonDriver_uSUNpTV_isoch.dll"
+@@ -32,7 +32,7 @@
+             VALUE "ProductName", "BonDriver_uSUNpTV"
+ #endif
+             VALUE "LegalCopyright", "hyrolean-dtv 2019-2020 inspired by trinity19683 2016"
+-            VALUE "ProductVersion", "0,2020,11,21"
++            VALUE "ProductVersion", "0,2020,11,22"
+         END
+     END
+     BLOCK "VarFileInfo"
+diff -uPr BonD_FSHybrid-20201009_mod6/src/bonhybrid.cpp BonD_FSHybrid-20201009_mod6.1/src/bonhybrid.cpp
+--- BonD_FSHybrid-20201009_mod6/src/bonhybrid.cpp	2020-11-21 00:30:18.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/bonhybrid.cpp	2020-11-22 01:57:50.000000000 +0900
+@@ -678,7 +678,7 @@
+ 		}while(0)
+ 	const int TS_LegacyPacketSize =  188*245 ;
+ 	ACALCI_ENTRY_CONST(TS_MaxNumIO);
+-	ACALCI_ENTRY_CONST(TS_BufPackets);
++	//ACALCI_ENTRY_CONST(TS_BufPackets);
+ 	ACALCI_ENTRY_CONST(TS_PacketSize);
+ 	ACALCI_ENTRY_CONST(TS_LegacyPacketSize);
+ 	#ifdef INCLUDE_ISOCH_XFER
+diff -uPr BonD_FSHybrid-20201009_mod6/src/tsbuff.h BonD_FSHybrid-20201009_mod6.1/src/tsbuff.h
+--- BonD_FSHybrid-20201009_mod6/src/tsbuff.h	2020-11-03 21:55:08.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/tsbuff.h	2020-11-22 23:22:28.000000000 +0900
+@@ -10,35 +10,35 @@
+ #ifdef INCLUDE_ISOCH_XFER // Isochronous & Bulk hybrid
+ 
+ //# Isochronous Frames per a Packet
+-#define ISOCH_PacketFrames 48
++#define ISOCH_PacketFrames	48
+ 
+ //# Isochronous Frame size (real packet size)
+-#define ISOCH_FrameSize   (5*188)
++#define ISOCH_FrameSize		(5*188)
+ 
+ //# TS Packet size (faked packet size)
+-#define TS_PacketSize   (ISOCH_FrameSize*ISOCH_PacketFrames)
++#define TS_PacketSize	(ISOCH_FrameSize*ISOCH_PacketFrames)
+ 
+ #else // Bulk only
+ 
+ //# TS Packet size (real packet size)
+-#define TS_PacketSize   47752 // org : 46060
++#define TS_PacketSize	47752 // org : 46060
+ 
+ #endif
+ 
+-//# TS Buffer packets
+-#define TS_BufPackets	64
+-
+ //# TS Buffer size
+-#define TS_CalcBufSize(PacketSize)	(ROUNDUP(PacketSize,0x1FF)*TS_BufPackets)
++#define TS_CalcBufSize(PacketSize,Packets)	(ROUNDUP(PacketSize,0x1FF)*Packets)
+ #define TS_BufSize		TS_CalcBufSize(TS_PacketSize)
+ 
+ //# number of keeping read only bytes before the buffer busy memory area
+ #define TS_CalcDeadZone(BufSize)	(BufSize/4)
+-#define TS_DeadZone  	TS_CalcDeadZone(TS_BufSize)
++#define TS_DeadZone		TS_CalcDeadZone(TS_BufSize)
+ 
+ //# max number of submitted IO requests
+-#define TS_MaxNumIO  64
++#define TS_MaxNumIO		256
+ 
++//# 2020-11-22
++//#   Removed the definition "TS_BufPackets".
++//#     It's auto calculated on tsthread_create() function of "tsthread.c".
+ //# 2020-11-3
+ //#   Moved the definition "ROUNDUP" from the source file "tsthread.c".
+ //#   Removed the definition "TS_PollTimeout"
+diff -uPr BonD_FSHybrid-20201009_mod6/src/tsthread.c BonD_FSHybrid-20201009_mod6.1/src/tsthread.c
+--- BonD_FSHybrid-20201009_mod6/src/tsthread.c	2020-11-21 02:46:40.000000000 +0900
++++ BonD_FSHybrid-20201009_mod6.1/src/tsthread.c	2020-11-23 00:25:08.000000000 +0900
+@@ -208,6 +208,10 @@
+ #endif
+ 		1 ;
+ 
++	EnterCriticalSection(&ps->csTsExclusive);
++	ps->loop_flags &= ~(loop_model<<2) ;
++	LeaveCriticalSection(&ps->csTsExclusive);
++
+ 	//# tell the loop is started
+ 	SetEvent(ps->hTsLoopIn);
+ 
+@@ -278,26 +282,30 @@
+ 			if(ps->total_submit>0) {
+ 
+ 				//# poll
+-				int total_submit = ps->total_submit ;
+ 				int next_wait_index=-1 ;
+-				int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
+-				dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
+-				if (isCritical(ps)) continue;
+-				if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
+-					int end_index=(ps->ri+total_submit)%ps->io_num ;
+-					next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
++				{
++					int total_submit = ps->total_submit ;
++					int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
++					dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
++					if (isCritical(ps)) continue;
++					if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
++						next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
+ #ifdef STRICTLY_CHECK_EVENT_SIGNALS
+-					while(next_wait_index!=end_index) {
+-						if(!HasSignal(ps->hTsEvents[next_wait_index]))
+-							break ;
+-						if (++next_wait_index >= ps->io_num)
+-							next_wait_index ^= next_wait_index ;
+-					}
++						if(!duplex) {
++							int end_index=(ps->ri+ps->total_submit)%ps->io_num ;
++							while( next_wait_index != end_index ) {
++								if(!HasSignal(ps->hTsEvents[next_wait_index]))
++									break ;
++								if (++next_wait_index >= ps->io_num)
++									next_wait_index ^= next_wait_index ;
++							}
++						}
+ #endif
+-				}else if(WAIT_TIMEOUT!=dRet) {
+-					dRet = GetLastError();
+-					warn_info(dRet,"poll failed");
+-					break;
++					}else if(WAIT_TIMEOUT!=dRet) {
++						dRet = GetLastError();
++						warn_info(dRet,"poll failed");
++						break;
++					}
+ 				}
+ 
+ 				//# reap
+@@ -308,6 +316,8 @@
+ 
+ 						DWORD bytesRead=pContext->bytesRead ;
+ 
++						if (duplex && !HasSignal(ps->hTsEvents[ps->ri])) break ;
++
+ 						if (isCritical(ps)) break;
+ 						//if(!HasSignal(ps->hTsEvents[ps->ri])) break ;
+ 						if(bytesRead>0) {
+@@ -478,14 +488,13 @@
+ 							if(duplex) EnterCriticalSection(&ps->csTsExclusive) ;
+ 							ps->total_submit-- ;
+ 							if(duplex) LeaveCriticalSection(&ps->csTsExclusive) ;
+-							total_submit-- ;
+ 							SetEvent(ps->hTsReap);
+ 						}
+ 					}
+ 					if(++ps->ri>=ps->io_num) ps->ri^=ps->ri ;
+-					if(total_submit<=0) break ;
++					if(ps->total_submit<=0) break;
+ 
+-				}while(ps->ri!=next_wait_index);
++				}while(duplex || ps->ri!=next_wait_index);
+ 
+ 			}
+ 		}
+@@ -512,7 +521,7 @@
+ 
+ 		}
+ 
+-        //# submitting loop model
++		//# submitting loop model
+ 		if( loop_model&2 ) {
+ 
+ 			if( duplex && ps->total_submit>=(ps->flags&0x10?ps->io_num:MIN_IOLIMIT) ) {
+@@ -718,8 +727,10 @@
+ 
+ 	}
+ 
+-	//# dispose
+-	tsthread_purgeURB(ps);
++	EnterCriticalSection(&ps->csTsExclusive);
++	ps->loop_flags |= (loop_model<<4) ; //# end of loop
++	if((ps->loop_flags&(3<<4))==(3<<4)) tsthread_purgeURB(ps); //# dispose
++	LeaveCriticalSection(&ps->csTsExclusive);
+ 
+ 	return dRet ;
+ }
+@@ -750,10 +761,13 @@
+ 
+ 	unsigned io_num = TSTHREAD_NUMIO ;
+ 	unsigned io_limit = TSTHREAD_SUBMIT_IOLIMIT ;
++	unsigned TS_BufPackets = 1 ;
+ 	if(io_limit<MIN_IOLIMIT) io_limit=MIN_IOLIMIT ;
+ 	if (io_num < io_limit) io_num = io_limit;
+ 	else if (io_num > TS_MaxNumIO) io_num = TS_MaxNumIO;
+ 	if(io_limit > io_num) io_limit = io_num ;
++	while(TS_BufPackets<io_num+TS_CalcDeadZone(TS_BufPackets))
++		TS_BufPackets<<=1 ;
+ 
+ 	{ //#
+ 		const BOOL tsfifo_exists = ptsfifo ? TRUE : FALSE ;
+@@ -769,7 +783,7 @@
+ #ifdef INCLUDE_ISOCH_XFER
+ 			pusbep->endpoint & 0x100 ? ISOCH_PacketFrames*TS_BufPackets :
+ #endif
+-			TS_CalcBufSize(xferSize)/unitSize ;
++			TS_CalcBufSize(xferSize,TS_BufPackets)/unitSize ;
+ 		const unsigned buffSize = wback_exists ? 0 : unitSize*unitNum ;
+ 		const unsigned buffer_size = wback_exists ? 0 : ROUNDUP( buffSize, 0xF );
+ 		const unsigned actlen_size = wback_exists ? 0 : sizeof( int ) * unitNum;
+@@ -889,9 +903,12 @@
+ 
+ 	SetEvent(ps->hTsRestart);
+ 
++	ps->loop_flags = 0 ;
+ 	ps->hThreads[0]=ps->hThreads[1]=INVALID_HANDLE_VALUE;
+-    for(i=0;i<(TSTHREAD_DUPLEX?2:1);i++) {
+-		ps->loop_flags = TSTHREAD_DUPLEX ? 1<<(2+i)/*duplex*/: 3<<2/*simplex*/;
++	for(i=0;i<(TSTHREAD_DUPLEX?2:1);i++) {
++		EnterCriticalSection(&ps->csTsExclusive);
++		ps->loop_flags |= TSTHREAD_DUPLEX ? 1<<(2+i)/*duplex*/: 3<<2/*simplex*/;
++		LeaveCriticalSection(&ps->csTsExclusive);
+ 		ResetEvent(ps->hTsLoopIn);
+ 		ps->hThreads[i] = ( HANDLE ) _beginthreadex( NULL, 0, tsthread, ps, 0, NULL );
+ 		if ( INVALID_HANDLE_VALUE == ps->hThreads[i] ) {
+@@ -902,7 +919,7 @@
+ 			if(TSTHREAD_DUPLEX) WaitForSingleObject(ps->hTsLoopIn,INFINITE);
+ 		}
+ 	}
+-    
++
+ 	*tptr = ps;
+ 
+ 	return result ;

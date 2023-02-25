@@ -71,7 +71,8 @@ DWORD DEVICE_RETRY_TIMES = 3 ;       // デバイス初期化再試行最大回数
 DWORD TUNER_RETRY_DURATION = 3000 ;  // チューナーのオープン最大再試行時間
 
 // チューナー自動参照時に機器の参照IDを循環させるようにするかどうか
-BOOL DEVICE_ID_ROTATION = FALSE ;
+BOOL DEVICE_ID_ROTATION = FALSE ;          // IDを循環参照させるかどうか
+BOOL DEVICE_ID_ROTATION_VOLATILE = FALSE ; // 揮発性レジストリに書くかどうか
 
 }
 
@@ -185,28 +186,28 @@ string CBonFSHybrid::ModuleFileName()
 //---------------------------------------------------------------------------
 bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev)
 {
-	bool result = false ;
+	bool result = false, breath = true ;
 	DWORD counter = 0;
 	hDev=hUsbDev=NULL;
 	int user_idx = UserDecidedDeviceIdx();
 	int rot_idx = -1 ;
 	wstring rot_nam = L"ROTATION_DEVICE_ID("+wstring(GetTunerName())+L")" ;
+	wstring reg_nam = RegName() ;
+	if(DEVICE_ID_ROTATION_VOLATILE) reg_nam += L"\\__volatile__" ;
 	if(DEVICE_ID_ROTATION && user_idx<0) {
 		HKEY hKey ;
-		if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, RegName(), 0, KEY_READ, &hKey)) {
-			rot_idx = (int) CRegValueLoader(hKey).ReadDWORD(rot_nam,0);
-			rot_idx++;
+		if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, reg_nam.c_str(), 0, KEY_READ, &hKey)) {
+			rot_idx = (int) CRegValueLoader(hKey).ReadDWORD(rot_nam,0) + 1 ;
 			RegCloseKey(hKey);
 		}else rot_idx=0;
 	}
 	do {
 		int idx = user_idx < 0 ? rot_idx : user_idx ;
-		if(counter>0||hDev||hUsbDev){
+		if(hDev||hUsbDev) {
 			Sleep(50);
 			FreeDevice(hDev,hUsbDev);
-			hDev=hUsbDev=NULL;
-			Sleep(1000) ; //# take a breath before retrying...
 		}
+		if(counter>0) Sleep(1000) ; //# take a breath before retrying...
 		if((hDev = usbdevfile_alloc(&idx,&drvGUID) ) == NULL) {
 			if(user_idx<0&&rot_idx>=0) {
 				if(rot_idx!=0) rot_idx^=rot_idx;
@@ -224,7 +225,9 @@ bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev
 	if(result && DEVICE_ID_ROTATION && rot_idx>=0) {
 		HKEY hKey ; DWORD dwDisposition ;
 		if( ERROR_SUCCESS == RegCreateKeyEx(
-				HKEY_CURRENT_USER, RegName(), 0, NULL, REG_OPTION_NON_VOLATILE,
+				HKEY_CURRENT_USER, reg_nam.c_str(), 0, NULL,
+				DEVICE_ID_ROTATION_VOLATILE?
+					REG_OPTION_VOLATILE: REG_OPTION_NON_VOLATILE,
 				KEY_ALL_ACCESS, NULL, &hKey, &dwDisposition) ) {
 			RegSetValueEx( hKey, rot_nam.c_str(), 0, REG_DWORD,
 				(BYTE*)&rot_idx, sizeof DWORD );
@@ -688,6 +691,7 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADDW(TUNER_RETRY_DURATION);
 	LOADDW(DEVICE_ID_ROTATION);
+    LOADDW(DEVICE_ID_ROTATION_VOLATILE);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
 	LOADDW(TSTHREAD_DUPLEX);

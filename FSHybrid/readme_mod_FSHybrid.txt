@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2021/12/4
+BonDriver_FSHybrid.dll MOD @ 2021/12/7
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -36,9 +36,9 @@ BonDriver_FSHybrid.dll MOD @ 2021/12/4
 
 2021/3/18 からの変更点
 
-  ・iniファイルにチューナーID自動割り当て時にIDを循環させる以下の項目を追加
+  ・iniファイルにチューナーID自動割り当て時にIDを循環させる以下の２項目を追加
 
-     DEVICE_ID_ROTATION
+     DEVICE_ID_ROTATION / DEVICE_ID_ROTATION_VOLATILE
 
 2021/2/7 からの変更点
 

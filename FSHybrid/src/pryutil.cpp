@@ -1,5 +1,6 @@
 //===========================================================================
 #include "stdafx.h"
+#include <cctype>
 #include <process.h>
 #include <locale.h>
 
@@ -106,8 +107,8 @@ string file_prefix_of(string filename)
     {
     protected:
       enum token_t {
-        tSTART  = 0,
-        tEND    = 1,
+        tEND    = 0,
+        tSTART  = 1,
         tVAL    = 10,
         tPLUS   = 20,  /* prec ADD */
         tMINUS  = 21,  /* prec SUB */
@@ -130,64 +131,66 @@ string file_prefix_of(string filename)
         token_t token ;
         int val ;
         struct node_t *next ;
+        node_t(): token(tEND),val(0),next(NULL) {}
       };
       node_t *top ;
       int def_val ;
       bool halfway ;
       const char *es ;
     protected:
+      static void skip_val_literal(const char *&s) {
+        while(*s&&(isalnum(*s)||*s=='_')) s++;
+      }
       int __fastcall parse(node_t *backTK) {
         node_t nextTK;
         backTK->next = &nextTK;
         while(*es==' '||*es=='\t'||*es=='\r'||*es=='\n')
           es++;
-        if(!*es||*es==';') {
-          nextTK.token=tEND;
+        if(!*es||*es==';')
           return calculate();
-        }
-        if(es[0]=='0') {
+        if(*es>='0'&&*es<='9') {
           char *e=NULL;
-          if(es[1]=='b'||es[1]=='B') {  // bin
-            nextTK.val=(int)strtol(es+=2,&e,2);
-            nextTK.token=tVAL;
-            if(e) es=e;
-          }else if(es[1]=='x'||es[1]=='X') { // hex
-            nextTK.val=(int)strtol(es+=2,&e,16);
-            nextTK.token=tVAL;
-            if(e) es=e;
-          }else { // oct
-            nextTK.val=(int)strtol(es,&e,8);
-            nextTK.token=tVAL;
-            if(e) es=e; else es+=2;
-          }
-        }
-        else if(*es>='1'&&*es<='9') { // dec
-          char *e=NULL;
-          nextTK.val=(int)strtol(es++,&e,10);
           nextTK.token=tVAL;
+          if(es[0]=='0') {
+            if(es[1]=='b'||es[1]=='B') // bin
+              nextTK.val=(int)strtol(es+=2,&e,2);
+            else if(es[1]=='x'||es[1]=='X') // hex
+              nextTK.val=(int)strtol(es+=2,&e,16);
+            else // oct
+              nextTK.val=(int)strtol(es++,&e,8);
+          }
+          else // dec
+            nextTK.val=(int)strtol(es++,&e,10);
           if(e) es=e;
+          skip_val_literal(es) ;
         }
-        else if(*es=='+') { nextTK.token=tADD; es++; }
-        else if(*es=='-') { nextTK.token=tSUB; es++; }
-        else if(*es=='~') { nextTK.token=tNOT; es++; }
         else if(!strncmp("**",es,2)) { nextTK.token=tFACT; es+=2; }
-        else if(*es=='*') { nextTK.token=tMUL; es++; }
-        else if(*es=='/') { nextTK.token=tDIV; es++; }
-        else if(*es=='%') { nextTK.token=tDIV; es++; }
         else if(!strncmp("<<",es,2)) { nextTK.token=tLSHIFT; es+=2; }
         else if(!strncmp(">>",es,2)) { nextTK.token=tRSHIFT; es+=2; }
-        else if(*es=='&') { nextTK.token=tAND; es++; }
-        else if(*es=='^') { nextTK.token=tXOR; es++; }
-        else if(*es=='|') { nextTK.token=tOR; es++; }
-        else if(*es=='(') { nextTK.token=tLP; es++; }
-        else if(*es==')') { nextTK.token=tRP; es++; }
-        else {nextTK.token=tEND; return calculate();}
+        else {
+          switch(*es) {
+            case '+': nextTK.token=tADD; break;
+            case '-': nextTK.token=tSUB; break;
+            case '~': nextTK.token=tNOT; break;
+            case '*': nextTK.token=tMUL; break;
+            case '/': nextTK.token=tDIV; break;
+            case '%': nextTK.token=tMOD; break;
+            case '&': nextTK.token=tAND; break;
+            case '^': nextTK.token=tXOR; break;
+            case '|': nextTK.token=tOR;  break;
+            case '(': nextTK.token=tLP;  break;
+            case ')': nextTK.token=tRP;  break;
+            default:
+              return calculate();
+          }
+          es++;
+        }
         return parse(&nextTK);
       }
       int calculate() {
         int num=0;
         node_t *p=top->next;
-        while(p->token!=tEND) {
+        while(p&&p->token!=tEND) {
           num++;
           p=p->next;
         }

@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/11/22
+BonDriver_FSHybrid.dll MOD @ 2021/2/7
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,12 @@ BonDriver_FSHybrid.dll MOD @ 2020/11/22
 
 
 ■更新履歴
+
+2020/11/22 からの変更点
+
+  ・iniファイルに以下の既定の三波チャンネル配置設定に関する以下の２項目を追加
+
+     DEF_SPACE_BS_STREAM_STRIDE / DEF_SPACE_CS110_STREAM_STRIDE
 
 2020/11/3 からの変更点
 

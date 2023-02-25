@@ -54,10 +54,14 @@ BOOL DEFSPACE_AUX = TRUE ;
 BOOL DEFSPACE_BS = TRUE ;
 // 既定の三波チューナーBSチャンネルの各ストリーム数(0-8)
 DWORD DEFSPACE_BS_STREAMS = 8 ;
+// 既定の三波チューナーBSチャンネルをストリーム基準に配置するかどうか
+BOOL DEFSPACE_BS_STREAM_STRIDE = FALSE ;
 // 既定の三波チューナーチャンネル情報にCS110を含めるかどうか
 BOOL DEFSPACE_CS110 = TRUE ;
 // 既定の三波チューナーCS110チャンネルの各ストリーム数(0-8)
 DWORD DEFSPACE_CS110_STREAMS = 8 ;
+// 既定の三波チューナーCS110チャンネルをストリーム基準に配置するかどうか
+BOOL DEFSPACE_CS110_STREAM_STRIDE = FALSE ;
 // IBonDriverのSetChannelにユーザーチャンネルを使用するかどうか
 BOOL BYTETUNING_USER = FALSE ;
 
@@ -325,22 +329,36 @@ void CBonFSHybrid::BuildSChannels()
 {
 	if(DEFSPACE_BS) {
 		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
-		for(int i=1;i<=23;i+=2) {
-			if(DEFSPACE_BS_STREAMS) for(DWORD j=0;j<DEFSPACE_BS_STREAMS;j++) {
-				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i)+L"/TS"+itows(j),j));
+		if(DEFSPACE_BS_STREAMS) {
+			if(DEFSPACE_BS_STREAM_STRIDE) {
+				for(DWORD j=0;j<DEFSPACE_BS_STREAMS;j++)
+				for(int i=1;i<=23;i+=2)
+					m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i)+L"/TS"+itows(j),j));
 			}else {
-				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i),0));
+				for(int i=1;i<=23;i+=2)
+				for(DWORD j=0;j<DEFSPACE_BS_STREAMS;j++)
+					m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i)+L"/TS"+itows(j),j));
 			}
+		}else {
+			for(int i=1;i<=23;i+=2)
+				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i),0));
 		}
 	}
 	if(DEFSPACE_CS110) {
 		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
-		for(int i=2;i<=24;i+=2) {
-			if(DEFSPACE_CS110_STREAMS) for(DWORD j=0;j<DEFSPACE_CS110_STREAMS;j++) {
-				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i)+L"/TS"+itows(j),j));
+		if(DEFSPACE_CS110_STREAMS) {
+			if(DEFSPACE_CS110_STREAM_STRIDE) {
+				for(DWORD j=0;j<DEFSPACE_CS110_STREAMS;j++)
+				for(int i=2;i<=24;i+=2)
+					m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i)+L"/TS"+itows(j),j));
 			}else {
-				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i),0));
+				for(int i=2;i<=24;i+=2)
+				for(DWORD j=0;j<DEFSPACE_CS110_STREAMS;j++)
+					m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i)+L"/TS"+itows(j),j));
 			}
+		}else {
+			for(int i=2;i<=24;i+=2)
+				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i),0));
 		}
 	}
 }
@@ -630,8 +648,10 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEFSPACE_AUX);
 	LOADDW(DEFSPACE_BS);
 	LOADDW(DEFSPACE_BS_STREAMS);
+	LOADDW(DEFSPACE_BS_STREAM_STRIDE);
 	LOADDW(DEFSPACE_CS110);
 	LOADDW(DEFSPACE_CS110_STREAMS);
+	LOADDW(DEFSPACE_CS110_STREAM_STRIDE);
 	LOADDW(BYTETUNING_USER);
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADDW(TUNER_RETRY_DURATION);

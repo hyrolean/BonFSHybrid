@@ -13,6 +13,50 @@ namespace PRY8EAlByw {
 //---------------------------------------------------------------------------
 
 //===========================================================================
+// Statics
+//---------------------------------------------------------------------------
+static errno_t splitPath(
+   const string &path,
+   string *pDrv=NULL,
+   string *pDir=NULL,
+   string *pFname=NULL,
+   string *pExt=NULL,
+   UINT code_page=CP_ACP
+) {
+
+  wstring wpath = mbcs2wcs(path,code_page) ;
+
+  #define BUFALLOC(Nam) BUFFER<wchar_t> w##Nam(p##Nam?_MAX_FNAME:0)
+  BUFALLOC(Drv);
+  BUFALLOC(Dir);
+  BUFALLOC(Fname);
+  BUFALLOC(Ext);
+  #undef BUFALLOC
+
+  #define SPLPARAM(Nam) \
+     (p##Nam?w##Nam.data():NULL), \
+     (p##Nam?w##Nam.size():0)
+  errno_t r = _wsplitpath_s(
+     wpath.c_str(),
+     SPLPARAM(Drv),
+     SPLPARAM(Dir),
+     SPLPARAM(Fname),
+     SPLPARAM(Ext)
+  );
+  #undef SPLPARAM
+
+  if(!r) {
+    #define STOREVAL(Nam) if(p##Nam) *p##Nam = wcs2mbcs(w##Nam.data(),code_page)
+    STOREVAL(Drv) ;
+    STOREVAL(Dir) ;
+    STOREVAL(Fname) ;
+    STOREVAL(Ext) ;
+    #undef STOREVAL
+  }
+
+  return r ;
+}
+//===========================================================================
 // Functions
 //---------------------------------------------------------------------------
 DWORD Elapsed(DWORD start, DWORD end)
@@ -83,21 +127,64 @@ string lower_case(string str)
   return static_cast<string>(temp.data()) ;
 }
 //---------------------------------------------------------------------------
+string file_drive_of(string filename)
+{
+  string drv ;
+  splitPath(filename,&drv) ;
+  return drv ;
+}
+//---------------------------------------------------------------------------
 string file_path_of(string filename)
 {
-  char szDrive[_MAX_FNAME] ;
-  char szDir[_MAX_FNAME] ;
-  _splitpath_s( filename.c_str(), szDrive, _MAX_FNAME, szDir, _MAX_FNAME
-    , NULL, 0, NULL, 0 ) ;
-  return string(szDrive)+string(szDir) ;
+  string drv, dir ;
+  splitPath(filename,&drv,&dir) ;
+  return drv+dir ;
+}
+//---------------------------------------------------------------------------
+string file_name_of(string filename)
+{
+  string name, ext ;
+  splitPath(filename,NULL,NULL,&name,&ext) ;
+  return name+ext ;
 }
 //---------------------------------------------------------------------------
 string file_prefix_of(string filename)
 {
-  char szName[_MAX_FNAME] ;
-  _splitpath_s( filename.c_str(), NULL, 0, NULL, 0
-    , szName, _MAX_FNAME, NULL, 0 ) ;
-  return string(szName) ;
+  string name;
+  splitPath(filename,NULL,NULL,&name) ;
+  return name ;
+}
+//---------------------------------------------------------------------------
+string file_suffix_of(string filename)
+{
+  string ext ;
+  splitPath(filename,NULL,NULL,NULL,&ext) ;
+  return ext ;
+}
+//---------------------------------------------------------------------------
+int file_age_of(string filename)
+{
+  WIN32_FIND_DATAA data ;
+  HANDLE h = FindFirstFileA(filename.c_str(),&data);
+  if(h == INVALID_HANDLE_VALUE) return -1 ;
+  FindClose(h) ;
+  if(data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) return -1 ;
+  FILETIME local ;
+  FileTimeToLocalFileTime(&data.ftLastWriteTime, &local);
+  WORD d, t ;
+  if(!FileTimeToDosDateTime(&local, &d, &t)) return -1 ;
+  return int(DWORD(d)<<16|DWORD(t)) ;
+}
+//---------------------------------------------------------------------------
+bool file_is_existed(string filename)
+{
+  return file_age_of(filename) != -1 ;
+}
+//---------------------------------------------------------------------------
+bool folder_is_existed(string filename)
+{
+  DWORD attr = GetFileAttributesA(filename.c_str()) ;
+  return attr!=MAXDWORD && (attr&FILE_ATTRIBUTE_DIRECTORY) ? true : false ;
 }
 //===========================================================================
 // acalci
@@ -927,12 +1014,11 @@ unsigned int CAsyncFifo::AllocThreadProcMain ()
 //---------------------------------------------------------------------------
 unsigned int __stdcall CAsyncFifo::AllocThreadProc (PVOID pv)
 {
-    register CAsyncFifo *_this = static_cast<CAsyncFifo*>(pv) ;
-    unsigned int result = _this->AllocThreadProcMain() ;
+    register CAsyncFifo *this_ = static_cast<CAsyncFifo*>(pv) ;
+    unsigned int result = this_->AllocThreadProcMain() ;
     _endthreadex(result) ;
     return result;
 }
-
 //---------------------------------------------------------------------------
 bool CAsyncFifo::WaitForAllocation()
 {
@@ -991,6 +1077,12 @@ bool CAsyncFifo::WaitForAllocation()
       ACALCI_ENTRY_CONST(INT_MIN);
       ACALCI_ENTRY_CONST(INT_MAX);
       ACALCI_ENTRY_CONST(INFINITE);
+      ACALCI_ENTRY_CONST(IDLE_PRIORITY_CLASS);
+      ACALCI_ENTRY_CONST(BELOW_NORMAL_PRIORITY_CLASS);
+      ACALCI_ENTRY_CONST(NORMAL_PRIORITY_CLASS);
+      ACALCI_ENTRY_CONST(ABOVE_NORMAL_PRIORITY_CLASS);
+      ACALCI_ENTRY_CONST(HIGH_PRIORITY_CLASS);
+      ACALCI_ENTRY_CONST(REALTIME_PRIORITY_CLASS);
       ACALCI_ENTRY_CONST(THREAD_PRIORITY_IDLE);
       ACALCI_ENTRY_CONST(THREAD_PRIORITY_LOWEST);
       ACALCI_ENTRY_CONST(THREAD_PRIORITY_BELOW_NORMAL);

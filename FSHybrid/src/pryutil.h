@@ -31,8 +31,14 @@ std::wstring itows(int val,int radix=10);
 std::string upper_case(std::string str) ;
 std::string lower_case(std::string str) ;
 
+std::string file_drive_of(std::string filename);
 std::string file_path_of(std::string filename);
+std::string file_name_of(std::string filename);
 std::string file_prefix_of(std::string filename);
+std::string file_suffix_of(std::string filename);
+int file_age_of(std::string filename);
+bool file_is_existed(std::string filename);
+bool folder_is_existed(std::string filename);
 
 int acalci(const char *s, int defVal=0, const char **endPtr=NULL, bool allowIndigest=false);
 __int64 acalci64(const char *s, __int64 defVal=0, const char **endPtr=NULL, bool allowIndigest=false);

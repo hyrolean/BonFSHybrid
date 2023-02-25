@@ -34,7 +34,7 @@ std::string lower_case(std::string str) ;
 std::string file_path_of(std::string filename);
 std::string file_prefix_of(std::string filename);
 
-int acalci(const char *s, int defVal=0);
+int acalci(const char *s, int defVal=0, bool allowIndigest=false);
 
 //===========================================================================
 // Inline Functions

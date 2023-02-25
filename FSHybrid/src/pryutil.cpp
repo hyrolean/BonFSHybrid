@@ -106,25 +106,25 @@ string file_prefix_of(string filename)
     {
     protected:
       enum token_t {
-        tSTART      =  0,
-        tEND        =  1,
-        tVAL        = 10,
-        tPLUS       = 20, /* prec ADD */
-        tMINUS      = 21, /* prec SUB */
-        tNOT        = 22,
-        tFACT       = 30,
-        tMUL        = 40,
-        tDIV        = 41,
-        tMOD        = 42,
-        tADD        = 50,
-        tSUB        = 51,
-        tLSHIFT     = 60,
-        tRSHIFT     = 61,
-        tAND        = 70,
-        tXOR        = 80,
-        tOR         = 90,
-        tLP         = 100,
-        tRP         = 101,
+        tSTART  = 0,
+        tEND    = 1,
+        tVAL    = 10,
+        tPLUS   = 20,  /* prec ADD */
+        tMINUS  = 21,  /* prec SUB */
+        tNOT    = 22,
+        tFACT   = 30,
+        tMUL    = 40,
+        tDIV    = 41,
+        tMOD    = 42,
+        tADD    = 50,
+        tSUB    = 51,
+        tLSHIFT = 60,
+        tRSHIFT = 61,
+        tAND    = 70,
+        tXOR    = 80,
+        tOR     = 90,
+        tLP     = 100,
+        tRP     = 101,
       };
       struct node_t {
         token_t token ;
@@ -133,6 +133,7 @@ string file_prefix_of(string filename)
       };
       node_t *top ;
       int def_val ;
+      bool halfway ;
       const char *es ;
     protected:
       int __fastcall parse(node_t *backTK) {
@@ -154,14 +155,10 @@ string file_prefix_of(string filename)
             nextTK.val=(int)strtol(es+=2,&e,16);
             nextTK.token=tVAL;
             if(e) es=e;
-          }else if(es[1]>='0'&&es[1]<='7') { // oct
-            nextTK.val=(int)strtol(es+1,&e,8);
+          }else { // oct
+            nextTK.val=(int)strtol(es,&e,8);
             nextTK.token=tVAL;
             if(e) es=e; else es+=2;
-          }else { // 0 ( dec? )
-            nextTK.val=(int)strtol(es++,&e,10);
-            nextTK.token=tVAL;
-            if(e) es=e;
           }
         }
         else if(*es>='1'&&*es<='9') { // dec
@@ -205,214 +202,189 @@ string file_prefix_of(string filename)
       #define D1(a)  (p->token==(a))
       #define D2(a,b)  (D1(a)&&p->next->token==(b))
       #define D3(a,b,c) (D2(a,b)&&p->next->next->token==(c))
-        node_t *p;
-        int bk_num=0;
-        if(pos) while(num>1) {
-          if(bk_num==num) {
-            // これ以上計算が進まないので、ここで中断する
-            break ;
-          }
-          bk_num=num;
-          //PRIOR100: ( )  ←先に計算して片付けておく
-          p=pos;
-          for(int i=0;i<num-1;i++,p=p->next) {
-            if(D1(tRP)) break ;
-            if(D1(tLP)) {
-              int n=num-(i+1),m=n;
-              do_calculate(n,p->next);
-              num -= m-n ;
-              if(num-i>=3&&D3(tLP,tVAL,tRP)) {
-                p->val= ( p->next->val );
-                p->token=tVAL;
-                p->next=nest_node(p,3);
-                num-=2;
-              }
-            }
-          }
-          //PRIOR20: + - ~ (single)
-          node_t *q=NULL; p=pos ; 
-          for(int i=0;i<num-1;i++,q=p,p=p->next) {
-            if(D1(tRP)) break ;
-            if(q&&q->token==tVAL) // NG: 左辺値が存在
-              continue;
-            else if(D2(tADD,tVAL)) {
-              p->val= + p->next->val;
+        if(!pos) {num=0; return def_val;}
+        //PRIOR100: ( )  <- parenthesses digest at first
+        node_t *p=pos;
+        for(int i=0;i<num-1;i++,p=p->next) {
+          if(D1(tRP)) break ;
+          if(D1(tLP)) {
+            num -= i+1;
+            do_calculate(num,p->next);
+            num += i+1;
+            if(num-i>=3&&D3(tLP,tVAL,tRP)) {
+              p->val= ( p->next->val );
               p->token=tVAL;
-              p->next=nest_node(p,2);
-              num--;
-            }
-            else if(D2(tSUB,tVAL)) {
-              p->val= - p->next->val;
-              p->token=tVAL;
-              p->next=nest_node(p,2);
-              num--;
-            }
-            else if(D2(tNOT,tVAL)) {
-              p->val= ~ p->next->val;
-              p->token=tVAL;
-              p->next=nest_node(p,2);
-              num--;
-            }
-          }
-          //PRIOR30: **
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tFACT,tVAL)) {
-              int val=p->val;
-              q=p->next->next;
-              if(q->val==0)
-                p->val=1;
-              else if(q->val<0)
-                p->val=0;
-              else while(q->val-1) {
-                p->val*=val;
-                q->val--;
-              }
-              p->next=q->next;
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR40: * / %
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tMUL,tVAL)) {
-              p->val=p->val * p->next->next->val;
               p->next=nest_node(p,3);
               num-=2;
             }
-            else if(D3(tVAL,tDIV,tVAL)) {
-              p->val=p->val / p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else if(D3(tVAL,tMOD,tVAL)) {
-              p->val=p->val % p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR50: + -
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tADD,tVAL)) {
-              p->val=p->val + p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else if(D3(tVAL,tSUB,tVAL)) {
-              p->val=p->val - p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR60: << >>
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tLSHIFT,tVAL)) {
-              p->val=p->val << p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else if(D3(tVAL,tRSHIFT,tVAL)) {
-              p->val=p->val >> p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR70: &
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tAND,tVAL)) {
-              p->val=p->val & p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR80: ^
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tXOR,tVAL)) {
-              p->val=p->val ^ p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
-          }
-          //PRIOR90: |
-          p=pos;
-          for(int i=0;i<num-2;) {
-            if(D1(tRP)) break ;
-            if(D3(tVAL,tOR,tVAL)) {
-              p->val=p->val | p->next->next->val;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-            else {i++;p=p->next;}
           }
         }
-        //PRIOR10: VAL or not
-        return pos&&pos->token==tVAL/*&&num==1*/? pos->val: def_val;
+        //PRIOR(20-90): operators digest ( parenthesses excluded )
+        node_t *q;
+        int n;
+        //PRIOR20: + - ~ (single)
+        do {
+          p=pos, q=NULL, n=0 ;
+          for (int i = 0; i < num - 1; q = p, p = p->next, i++) {
+            if(D1(tRP)) break ;
+            if(q&&q->token==tVAL) // NG: the LHS value is existed
+              continue;
+            if(D2(tADD,tVAL))       p->val= + p->next->val;
+            else if(D2(tSUB,tVAL))  p->val= - p->next->val;
+            else if(D2(tNOT,tVAL))  p->val= ~ p->next->val;
+            else continue ;
+            p->token=tVAL;
+            p->next=nest_node(p,2);
+            num--;
+            if(q&&(q->token==tADD||q->token==tSUB||q->token==tNOT))
+              n++;
+          }
+        }while(n>0);
+        //PRIOR30: **
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tFACT,tVAL)) {
+            int val=p->val;
+            q=p->next->next;
+            if(q->val==0)
+              p->val=1;
+            else if(q->val<0)
+              p->val=0;
+            else while(q->val-1) {
+              p->val*=val;
+              q->val--;
+            }
+            p->next=q->next;
+            num-=2;
+          }
+          else {i++;p=p->next;}
+        }
+        //PRIOR40: * / %
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tMUL,tVAL))        p->val=p->val * p->next->next->val;
+          else if(D3(tVAL,tDIV,tVAL))   p->val=p->val / p->next->next->val;
+          else if(D3(tVAL,tMOD,tVAL))   p->val=p->val % p->next->next->val;
+          else { i++;p=p->next; continue; }
+          p->next=nest_node(p,3);
+          num-=2;
+        }
+        //PRIOR50: + -
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tADD,tVAL))        p->val=p->val + p->next->next->val;
+          else if(D3(tVAL,tSUB,tVAL))   p->val=p->val - p->next->next->val;
+          else { i++;p=p->next; continue; }
+          p->next=nest_node(p,3);
+          num-=2;
+        }
+        //PRIOR60: << >>
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tLSHIFT,tVAL))      p->val=p->val << p->next->next->val;
+          else if(D3(tVAL,tRSHIFT,tVAL)) p->val=p->val >> p->next->next->val;
+          else { i++;p=p->next; continue; }
+          p->next=nest_node(p,3);
+          num-=2;
+        }
+        //PRIOR70: &
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tAND,tVAL)) {
+            p->val=p->val & p->next->next->val;
+            p->next=nest_node(p,3);
+            num-=2;
+          }
+          else {i++;p=p->next;}
+        }
+        //PRIOR80: ^
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tXOR,tVAL)) {
+            p->val=p->val ^ p->next->next->val;
+            p->next=nest_node(p,3);
+            num-=2;
+          }
+          else {i++;p=p->next;}
+        }
+        //PRIOR90: |
+        p=pos;
+        for(int i=0;i<num-2;) {
+          if(D1(tRP)) break ;
+          if(D3(tVAL,tOR,tVAL)) {
+            p->val=p->val | p->next->next->val;
+            p->next=nest_node(p,3);
+            num-=2;
+          }
+          else {i++;p=p->next;}
+        }
+        //PRIOR10: a VAL token is finally existed at the head or not
+        return pos&&pos->token==tVAL&&(halfway||num==1)? pos->val: def_val;
       #undef D1
       #undef D2
       #undef D3
       }
     public:
-      int execute(const char *expression_string, int default_value) {
+      int execute(const char *expression_string, int default_value,
+             bool allow_indigestion) {
         node_t sTK ;
         sTK.token = tSTART ;
         top = &sTK ;
         es = expression_string ;
         def_val = default_value ;
+        halfway = allow_indigestion ;
         return es ? parse(top) : def_val ;
       }
     };
 
-//----- acalci 本体 -------------------------------------
-/* acalci 文字列計算式を計算して、整数に変換する。 */
-/********************************************************
+//----- acalci entity -----------------------------------------------
+/* Calculate the c-expression string and convert it to an integer. */
+/********************************************************************
 
-  int acalci(const char *s)
+  int acalci(const char *s, int defVal, bool allowIndigest)
 
-    s:計算式を書いた文字列。
-    計算式と結合法則: (下方程、優先順位が低くなる。)
-    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-        ( )                         →
-        + - ~ (単項)                ←
-        ** (乗算)                   →
-        * / %                       →
-        + -                         →
-        << >>                       →
-        &                           →
-        ^                           →
-        |                           →
-    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-    式の意味はＣ言語で常時使っているものと同様。
-    項には、整数のみ使用可能。変数は使用不可。
-    項: 全て､整数。以下、正規表現での略式表記。
-    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-      0[bB][01]+            ニ進数
-      [1-9][0-9]+           十進数
-      0[0-7]+               八進数
-      0[xX][0-9a-fA-F]+     十六進数
-    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-    セパレーター： スペース/タブ/キャリッジリターン/ニューラインコード
+    s: A c-expression string consisted of operators and terms.
+    defVal: A returned value as default on being failed to calculate.
+    allowIndigest: Allow the indigestion of operators or not.
+    [result]: A value as converted result of calculating s.
 
-********************************************************/
-int acalci(const char *s, int defVal)
+    Operators and Associativity::
+    (The order of priority is from top to bottom.)
+    ==============================================
+        ( )                    -> left to right
+        + - ~ (single)         <- right to left
+        ** (factorial)         -> left to right
+        * / %                  -> left to right
+        + -                    -> left to right
+        << >>                  -> left to right
+        &                      -> left to right
+        ^                      -> left to right
+        |                      -> left to right
+    ==============================================
+    Operator-meanings are almost same as C-Lang.
+
+    Only integers can be terms as the imm value.
+    Integer formats:: (described below as regexp.)
+    ==============================================
+      0[bB][01]+                  Binary digits
+      [1-9][0-9].                 Decimal digits
+      0[0-7].                     Octal digits
+      0[xX][0-9a-fA-F]+           Hexical digits
+    ==============================================
+
+    Separator:: [SPACE][TAB(\t)][CR(\r)][LF(\n)]
+
+********************************************************************/
+int acalci(const char *s, int defVal, bool allowIndigest)
 {
   integer_c_expression_string_calculator calculator ;
-  return calculator.execute(s, defVal) ;
+  return calculator.execute(s, defVal, allowIndigest) ;
 }
 
 //===========================================================================

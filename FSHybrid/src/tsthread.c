@@ -130,7 +130,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 			}
 			ps->buff_pop = ps->buff_push ;
 		}
-        else { //# Isochronous
+		else { //# Isochronous
 			void* ptr; while(tsthread_read( ps, &ptr )>0);
 		}
 	}
@@ -158,7 +158,6 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 	int ri=0; //# the circular index based ioContext cursor for reaping
 	int si=0; //# the circular index based ioContext cursor for submitting
-	int i ;
 	BOOL bRet ;
 	DWORD dRet=0 ;
 
@@ -294,32 +293,32 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						if (ps->pUSB->endpoint & 0x100) {
 #ifdef INCLUDE_ISOCH_XFER
 #if defined(_WIN32) && !defined(_WIN64)
-							
+
 							int stride = (char*) &pContext->isochFrameDesc[1]
 								- (char*) &pContext->isochFrameDesc[0] ;
 							void* sp_ = &pContext->isochFrameDesc[0].Length ;
 							void* dp_ = &ps->actual_length[pContext->index] ;
 							int dx_ = (char*) &pContext->isochFrameDesc[0].Status
 								- (char*) &pContext->isochFrameDesc[0].Length ;
-							int errorCnt = 0 ;
+							int errors = 0 ;
 							_asm {
 								mov ecx, frames
-								mov esi, sp_
 								mov edi, dp_
-								mov edx, dx_
-								mov eax, stride
 								cld
 								cmp bRet, 0
 								je lb3
 								xor ebx, ebx
+								mov esi, sp_
+								mov eax, stride
+								mov edx, dx_
 							lb1:
 								cmp dword ptr [esi+edx], 0
 								jne lb2
 								movsd
-								dec ecx
-								jz lb4
 								lea esi, [esi+eax-4]
-								jmp lb1
+								dec ecx
+								jnz lb1
+								jmp lb4
 							lb2:
 								mov dword ptr [edi], 0
 								lea edi, [edi+4]
@@ -333,22 +332,22 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								xor eax, eax
 								rep stosd
 							lb4:
-								mov errorCnt, ebx
+								mov errors, ebx
 							}
-							if(errorCnt>0)
-								warn_msg(dRet, "reapURB(%u)", errorCnt);
+							if(errors>0)
+								warn_msg(dRet, "reapURB(%u)", errors);
 #else
-							for (i = 0; i < frames; i++) {
-								int idx = pContext->index+i ;
-								if (!bRet||pContext->isochFrameDesc[i].Status) {
-									ps->actual_length[idx] =  0;
-									warn_msg(dRet, "reapURB%u.%u", ri, i);
+							register int n,*pLen = &ps->actual_length[pContext->index];
+							register const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[frames-1];
+							if(!bRet)
+								__stosd(pLen,0,frames);
+							else for (n = frames ; n ; n--, pDesc--) {
+								if (pDesc->Status) {
+									pLen[n-1] =  0;
+									warn_msg(dRet, "reapURB%u.%u", ri, n-1);
 								}
-								else {
-									DWORD ln = pContext->isochFrameDesc[i].Length ;
-									ps->actual_length[idx] = ln ;
-									//dmsgn("reapURB%u.%u=%d, ", ri, i, br);
-								}
+								else
+									pLen[n-1] = pDesc->Length ;
 							}
 #endif
 #endif
@@ -389,15 +388,15 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				edi = NULL ;
 				sz  = tsthread_read( ps, (void**) &edi ) ;
 				if(edi) {
-                    if(!esi)
+					if(!esi)
 						esi=edi, amount=sz, sz=0 ;
-                    else if(&esi[amount]==edi)
-                        amount+=sz, sz=0 ;
+					else if(&esi[amount]==edi)
+						amount+=sz, sz=0 ;
 				}
-                if(!edi||sz>0) {
-                    if(esi) pTSFifo->writeThrough(esi, amount, pTSFifo->arg) ;
-                    esi=edi, amount=sz ;
-                }
+				if(!edi||sz>0) {
+					if(esi) pTSFifo->writeThrough(esi, amount, pTSFifo->arg) ;
+					esi=edi, amount=sz ;
+				}
 			}while(esi);
 
 		}
@@ -469,17 +468,13 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 #endif
 					if(isWBack) {
 						buffer = pTSFifo->writeBackBegin(si, ps->buff_unitSize, pTSFifo->arg) ;
-						if(!buffer) {
-							break ; //# buffer overflow
-						}
+						if(!buffer) break ; //# buffer overflow
 					}
 					else {
-						BOOL busy=FALSE ;
-						for(i=0;i<frames&&!busy;i++) {
-							if(ps->actual_length[ps->buff_push+i]>0||ps->actual_length[ps->buff_push+i]==-2)
-								busy=TRUE ; //# buffer busy
-						}
-						if(busy) break ;
+						register int n,*p=&ps->actual_length[ps->buff_push] ;
+						for(n=frames;n;n--)
+							if(p[n-1]>0||p[n-1]==-2) break;
+						if(n) break ; //# buffer busy
 					}
 					EnterCriticalSection(&ps->csTsExclusive) ;
 					if(!isWBack) {
@@ -533,21 +528,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					}else {
 						//# submitting succeeded
 						if(!isWBack) {
-#if defined( _WIN32 ) && !defined( _WIN64 ) 
-							if(frames>1) {
-								void* dp_ = &ps->actual_length[ps->buff_push+1];
-								_asm {
-									mov edi, dp_
-									mov eax, -2
-									mov ecx, frames
-									dec ecx
-									cld
-									rep stosd
-								}
-							}
-#else
-						    for(i=1;i<frames;i++)
-								ps->actual_length[ps->buff_push+i] = -2;
+#if defined(INCLUDE_ISOCH_XFER)
+							if(frames>1)
+								__stosd(&ps->actual_length[ps->buff_push+1],-2,frames-1);
+#elif defined(_DEBUG)
+							assert(frames==1);
 #endif
 							if(ps->buff_push+frames>=ps->buff_num)
 								ps->buff_push=0;

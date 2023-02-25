@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/11/1
+BonDriver_FSHybrid.dll MOD @ 2020/11/3
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -34,11 +34,19 @@ BonDriver_FSHybrid.dll MOD @ 2020/11/1
 
 ■更新履歴
 
+2020/11/1 からの変更点
+
+  ・iniファイルに以下の項目群を新たに追加
+
+    TSTHREAD_POLL_TIMEOUT / TSTHREAD_SUBMIT_TIMEOUT / TSTHREAD_SUBMIT_IOLIMIT /
+	TSTHREAD_NUMIO / TSALLOC_TIMEOUT / TSALLOC_WAITING / TSALLOC_MODERATE /
+	TUNER_RETRY_DURATION
+
 2020/10/24 からの変更点
 
   ・iniファイルにTSスレッドの優先順位を変更することのできる以下の２項目を追加
 
-     TSTHREAD_PRIORITY / TSALLOC_PRIORITY  
+     TSTHREAD_PRIORITY / TSALLOC_PRIORITY
 
 2020/10/17 からの変更点
 

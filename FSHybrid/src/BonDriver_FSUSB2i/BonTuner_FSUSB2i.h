@@ -22,13 +22,13 @@ protected:
 	const TCHAR *RegName() ;
 	int UserDecidedDeviceIdx() ;
 	void LoadValues(const IValueLoader *Loader) ;
+	const BOOL TryOpenTuner(void);
 
 public:
 	CBonTuner();
 	virtual ~CBonTuner();
 
 //# IBonDriver
-	const BOOL OpenTuner(void);
 	void CloseTuner(void);
 
 	const float GetSignalLevel(void);

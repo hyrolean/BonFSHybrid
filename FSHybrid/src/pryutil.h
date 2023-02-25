@@ -22,8 +22,8 @@ namespace PRY8EAlByw {
 DWORD Elapsed(DWORD start=0,DWORD end=GetTickCount()) ;
 DWORD PastSleep(DWORD wait=0,DWORD start=GetTickCount()) ;
 
-std::wstring mbcs2wcs(std::string src);
-std::string wcs2mbcs(std::wstring src);
+std::wstring mbcs2wcs(std::string src, UINT code_page=CP_ACP);
+std::string wcs2mbcs(std::wstring src, UINT code_page=CP_ACP);
 
 std::string itos(int val,int radix=10);
 std::wstring itows(int val,int radix=10);

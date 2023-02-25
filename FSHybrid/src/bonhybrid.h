@@ -79,7 +79,9 @@ protected:
 	static void OnTSFifoPurge(void *arg) ;
 
 protected:
+	// Initializer
 	virtual void InitConstants();
+	virtual const BOOL TryOpenTuner(void) = 0 ;
 	// Registry
 	virtual const TCHAR *RegName() { return NULL ; }
 	// Channels
@@ -96,6 +98,7 @@ public:
 
 public: // inherited
 	// IBonDriver
+	virtual const BOOL OpenTuner(void);
 	virtual const BOOL SetChannel(const BYTE bCh);
 	virtual const DWORD WaitTsStream(const DWORD dwTimeOut = 0);
 	virtual const DWORD GetReadyCount(void);

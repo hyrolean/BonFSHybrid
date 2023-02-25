@@ -42,7 +42,7 @@ int CBonTuner::UserDecidedDeviceIdx()
 	return -1 ;
 }
 
-const BOOL CBonTuner::OpenTuner()
+const BOOL CBonTuner::TryOpenTuner()
 {
 	//# if already open, close tuner
 	CloseTuner();
@@ -87,9 +87,9 @@ void CBonTuner::CloseTuner()
 const float CBonTuner::GetSignalLevel(void)
 {
 	if(NULL == pDev) return 0.0f;
-    
+
     bool do_locking = FSUSB2I_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
-    
+
     if(do_locking) //# lock
 		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
 

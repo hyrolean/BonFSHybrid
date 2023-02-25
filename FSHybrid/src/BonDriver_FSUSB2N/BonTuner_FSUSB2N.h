@@ -19,13 +19,13 @@ protected:
 	const TCHAR *RegName() ;
 	int UserDecidedDeviceIdx() ;
     void LoadValues(const IValueLoader *Loader);
+	const BOOL TryOpenTuner(void);
 
 public:
 	CBonTuner();
 	virtual ~CBonTuner();
 
 // IBonDriver
-	const BOOL OpenTuner(void);
 	void CloseTuner(void);
 
 	const float GetSignalLevel(void);
@@ -51,7 +51,7 @@ protected:
 	struct usb_endpoint_st  m_USBEP;
 	EM2874Device *usbDev;
 	KtvDevice *pDev;
-    
+
 };
 
 } // End of namespace FSUSB2N

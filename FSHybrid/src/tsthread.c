@@ -14,18 +14,21 @@
 #include "usbops.h"
 #include "osdepend.h"
 #include "tsbuff.h"
-#include "tsthread.h"
+#include "tsthread.h"                     
 
-//#<OFF>#define STRICTLY_CHECK_EVENT_SIGNALS
+#define STRICTLY_CHECK_EVENT_SIGNALS
 //#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES
 //#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES_ALL
 
 #define HasSignal(e) (WaitForSingleObject(e,0)==WAIT_OBJECT_0)
 
-#define ROUNDUP(n,w) (((n) + (w)) & ~(unsigned)(w))
 
-//# URB thread priority
+//# URB thread settings
 int TSTHREAD_PRIORITY = THREAD_PRIORITY_HIGHEST ;
+DWORD TSTHREAD_POLL_TIMEOUT = 25 ;
+DWORD TSTHREAD_SUBMIT_TIMEOUT = 50 ;
+int TSTHREAD_NUMIO = 24 ; //# number of I/O buffering
+int TSTHREAD_SUBMIT_IOLIMIT = 4 ; //# keeping number of I/O buffering at least
 
 //# pipe policy settings
 BOOL USBPIPEPOLICY_RAW_IO = TRUE ;
@@ -94,13 +97,13 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 	EnterCriticalSection(&ps->csTsExclusive);
 	lockWinUsb(ps,1);
 
-	if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
+	if( !(ps->pUSB->endpoint & 0x100) ) { //# Bulk
 
 		WinUsb_AbortPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
 
 		if(ps->total_submit>0) {
 
-			for (i = 0;i < TS_MaxNumIO;i++) {
+			for (i = 0;i < TSTHREAD_NUMIO;i++) {
 				struct TSIO_CONTEXT* pContext = &ps->ioContext[i];
 				if(pContext->index>=0) {
 					if(ps->tsfifo&&ps->tsfifo->writeBackFinish)
@@ -126,7 +129,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 			ps->tsfifo->purge(ps->tsfifo->arg);
 	}
 	if(ps->actual_length) {
-		if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
+		if(!(ps->pUSB->endpoint & 0x100)) { //# Bulk
 			memset(&ps->actual_length[0],0xFF,
 				ps->buff_num*sizeof(ps->actual_length[0]));
 			ps->buff_pop = ps->buff_push ;
@@ -154,9 +157,6 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 {
 
-	//# number of the prefetching buffer busy area that shouldn't be submitted
-	const int POPDELTA = (TS_CalcDeadZone(ps->buff_size)+ps->buff_unitSize-1)/ps->buff_unitSize;
-
 	int ri=0; //# the circular index based ioContext cursor for reaping
 	int si=0; //# the circular index based ioContext cursor for submitting
 	BOOL bRet ;
@@ -174,6 +174,10 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			(ps->pUSB->endpoint & 0x100) ? FALSE:
 #endif
 			(pTSFifo && pTSFifo->writeBackBegin && pTSFifo->writeBackFinish ? TRUE: FALSE);
+
+	//# number of the prefetching buffer busy area that shouldn't be submitted
+	const int POPDELTA = hasWThrough ? 0 :
+		(TS_CalcDeadZone(ps->buff_size)+ps->buff_unitSize-1)/ps->buff_unitSize;
 
 	//# prefetching frames per a packet
 	const int frames =
@@ -197,7 +201,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 		if (!(ps->flags & 0x01)) {
 			SetEvent(ps->hTsStopped);
-			WaitForSingleObject(ps->hTsAvailable, TS_PollTimeout) ;
+			WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
 			continue ;
 		}
 
@@ -215,16 +219,16 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			//# poll
 			int next_wait_index=-1 ;
 			int max_wait_count = ps->total_submit<MAXIMUM_WAIT_OBJECTS ? ps->total_submit : MAXIMUM_WAIT_OBJECTS ;
-			dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ri] , FALSE, TS_PollTimeout );
+			dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
 			if (isCritical(ps)) continue;
 			if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
-				int end_index=(ri+ps->total_submit)%TS_MaxNumIO ;
-				next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ri)%TS_MaxNumIO ;
+				int end_index=(ri+ps->total_submit)%TSTHREAD_NUMIO ;
+				next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ri)%TSTHREAD_NUMIO ;
 #ifdef STRICTLY_CHECK_EVENT_SIGNALS
 				while(next_wait_index!=end_index) {
 					if(!HasSignal(ps->hTsEvents[next_wait_index]))
 						break ;
-					if (++next_wait_index >= TS_MaxNumIO)
+					if (++next_wait_index >= TSTHREAD_NUMIO)
 						next_wait_index ^= next_wait_index ;
 				}
 #endif
@@ -396,6 +400,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								}
 #endif
 							}
+							if(bRet) SetEvent(ps->hTsAvailable) ;
 #endif
 						}else {
 							if (isWBack)
@@ -410,7 +415,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					}
 					LeaveCriticalSection(&ps->csTsExclusive) ;
 				}
-				if(++ri>=TS_MaxNumIO) ri^=ri ;
+				if(++ri>=TSTHREAD_NUMIO) ri^=ri ;
 				if(ps->total_submit<=0) break ;
 
 			}while(ri!=next_wait_index);
@@ -449,14 +454,15 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 		if (HasSignal(ps->hTsRestart)) continue;
 
-		if(ps->total_submit<TS_MaxNumIO) {
+		if(ps->total_submit<TSTHREAD_NUMIO) {
 
 			//# submit
 			if(ps->flags & 0x01) {
 				DWORD tick = GetTickCount() ;
+				int cont = ps->flags & 0x10 ;
 				void *buffer;
 				DWORD lnTransfered;
-				int num_empties=0,max_empties=TS_MaxNumIO;
+				int num_empties=0,max_empties=TSTHREAD_NUMIO;
 				int last_state=0;
 				dRet = 0;bRet = FALSE;
 				//# calculate the real maximum number of empties on the buffer
@@ -478,7 +484,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					max_empties -= POPDELTA; //# subtract deadzone
 				}
 				//# total I/O submittable empties
-				num_empties=TS_MaxNumIO-ps->total_submit;
+				num_empties=TSTHREAD_NUMIO-ps->total_submit;
 				num_empties*=frames;
 				//start=si ;
 				if(num_empties>max_empties) {
@@ -487,11 +493,14 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					if(num_empties<=0&&ps->total_submit<=0) {
 						//# in the dead zone
 						if(!isWBack&&!hasWThrough&&last_state>=0) {
+							DWORD wait = TSTHREAD_SUBMIT_TIMEOUT ;
 							HANDLE events[2];
 							events[0]=ps->hTsRead;
 							events[1]=ps->hTsRestart ;
+							if(TSTHREAD_POLL_TIMEOUT<wait)
+								wait = TSTHREAD_POLL_TIMEOUT ;
 							//# wait for reading buffer...
-							dRet=WaitForMultipleObjects(2, events , FALSE, TS_PollTimeout );
+							dRet=WaitForMultipleObjects(2, events , FALSE, wait );
 							if(dRet==WAIT_TIMEOUT)
 							  DBGOUT("read: wait timeout\n") ;
 							else if(dRet==WAIT_OBJECT_0)
@@ -501,10 +510,10 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					#endif
 				}
 				//# submit to empties
-				while (num_empties-frames >= 0) {
+				while (num_empties>=frames) {
 					struct TSIO_CONTEXT* pContext = &ps->ioContext[si];
 					if (isCritical(ps)) break;
-					if(ps->total_submit>=TS_MaxNumIO) break;
+					if(ps->total_submit>=TSTHREAD_NUMIO) break;
 					if (pContext->index>=0) break ;
 					//if (HasSignal(ps->hTsEvents[ri])) break;
 #ifndef INCLUDE_ISOCH_XFER
@@ -580,6 +589,8 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 							bRet = WinUsb_ReadPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
 								buffer, ps->buff_unitSize, &lnTransfered, &(pContext->ol));
 							dRet = GetLastError();
+							if(!(ps->flags & 0x10))
+								ps->flags |= 0x10;
 						}
 					}
 					lockWinUsb(ps,0) ;
@@ -621,13 +632,14 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								DBGOUT("submit: pending (size=%d)\n",lnTransfered) ;
 						}
 						dRet = 0;
-						if(++si >= TS_MaxNumIO) si^=si;
+						if(++si >= TSTHREAD_NUMIO) si^=si;
 						++ps->total_submit;
 					}
 					LeaveCriticalSection(&ps->csTsExclusive) ;
 					//# check submitting failed or not
 					if(/*dRet||*/pContext->index<0) break ;
-					if (GetTickCount()-tick>=TS_SubmitTimeout) 
+					if (cont && GetTickCount()-tick>=TSTHREAD_SUBMIT_TIMEOUT
+						&& ps->total_submit>=TSTHREAD_SUBMIT_IOLIMIT )
 						break; //# submitting timeout
 					num_empties-=frames;
 				}
@@ -650,8 +662,6 @@ static unsigned int __stdcall tsthread(void* const param)
 	struct tsthread_param* const ps = param;
 	unsigned int result = 0;
 
-	ps->buff_push = 0;
-
 	result = tsthread_bulkURB(ps);
 
 	_endthreadex( 0 );
@@ -667,7 +677,12 @@ int tsthread_create( tsthread_ptr* const tptr,
 {
 
 	struct tsthread_param* ps;
-	DWORD dwRet, i;
+	DWORD dwRet; int i;
+
+	if (TSTHREAD_NUMIO < TSTHREAD_SUBMIT_IOLIMIT)
+		TSTHREAD_NUMIO = TSTHREAD_SUBMIT_IOLIMIT;
+	else if (TSTHREAD_NUMIO > TS_MaxNumIO)
+		TSTHREAD_NUMIO = TS_MaxNumIO;
 
 	{ //#
 		const BOOL tsfifo_exists = ptsfifo ? TRUE : FALSE ;
@@ -685,7 +700,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 #endif
 			TS_CalcBufSize(xferSize)/unitSize ;
 		const unsigned buffSize = wback_exists ? 0 : unitSize*unitNum ;
-		const unsigned buffer_size = wback_exists ? 0 : ROUNDUP( buffSize+TS_DeltaSize , 0xF );
+		const unsigned buffer_size = wback_exists ? 0 : ROUNDUP( buffSize, 0xF );
 		const unsigned actlen_size = wback_exists ? 0 : sizeof( int ) * unitNum;
 		const unsigned tsfifo_size = tsfifo_exists ? ROUNDUP( sizeof( struct tsfifo_t ), 0xF) : 0;
 		char *ptr, *buffer_ptr;
@@ -724,6 +739,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 	}
 	ps->pUSB = pusbep;
 	ps->flags = 0;
+	ps->buff_push = 0;
 	ps->buff_pop = 0;
 	ps->total_submit = 0;
 #ifdef INCLUDE_ISOCH_XFER
@@ -736,7 +752,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 	}
 #endif
 
-	for ( i = 0; i < TS_MaxNumIO; i++ ) {
+	for ( i = 0; i < TSTHREAD_NUMIO; i++ ) {
 		ps->ioContext[ i ].index = -1;    //# mark it unused
 		ps->hTsEvents[ i ] = CreateEvent( NULL, TRUE, FALSE, NULL );
 		ZeroMemory( &ps->ioContext[ i ].ol, sizeof( OVERLAPPED ) );
@@ -744,8 +760,8 @@ int tsthread_create( tsthread_ptr* const tptr,
 	}
 
 	//# it arranges for event handles to look like circular buffer
-	for ( i = 0; i < TS_MaxNumIO - 1; i++ ) {
-		ps->hTsEvents[ i + TS_MaxNumIO ] = ps->hTsEvents[ i ];
+	for ( i = 0; i < TSTHREAD_NUMIO - 1; i++ ) {
+		ps->hTsEvents[ i + TSTHREAD_NUMIO ] = ps->hTsEvents[ i ];
 	}
 	ps->hTsAvailable = CreateEvent( NULL, FALSE, FALSE, NULL );
 	ps->hTsRead = CreateEvent( NULL, FALSE, FALSE, NULL );
@@ -805,7 +821,7 @@ void tsthread_destroy(const tsthread_ptr ptr)
 		warn_msg(GetLastError(), "tsthread_destroy timeout");
 		TerminateThread(p->hThread, 0);
 	}
-	for (i = 0; i < TS_MaxNumIO; i++)
+	for (i = 0; i < TSTHREAD_NUMIO; i++)
 		CloseHandle(p->hTsEvents[i]);
 	CloseHandle(p->hTsAvailable);
 	CloseHandle(p->hTsRead);

@@ -55,7 +55,7 @@ int CBonTuner::UserDecidedDeviceIdx()
 	return -1 ;
 }
 
-const BOOL CBonTuner::OpenTuner()
+const BOOL CBonTuner::TryOpenTuner()
 {
 	//# if already open, close tuner
 	CloseTuner();
@@ -101,7 +101,7 @@ const BOOL CBonTuner::OpenTuner()
 	catch (const DWORD dwErrorStep) {
 		//# Error
 		warn_msg(0,"BonDriver_uSUNpTV:OpenTuner dwErrorStep = %u", dwErrorStep);
-
+		DBGOUT("BonDriver_uSUNpTV::OpenTuner(Line: %u): failed.\n", dwErrorStep);
 		CloseTuner();
 		return FALSE;
 	}

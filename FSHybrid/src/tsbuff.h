@@ -5,6 +5,7 @@
 */
 #pragma once
 
+#define ROUNDUP(n,w) (((n) + (w)) & ~(unsigned)(w))
 
 #ifdef INCLUDE_ISOCH_XFER // Isochronous & Bulk hybrid
 
@@ -24,29 +25,27 @@
 
 #endif
 
-//# TS Delta size that is reserved bytes protected from device's messy overlapping
-#define TS_DeltaSize  	1024
-
 //# TS Buffer packets
-#define TS_BufPackets	64
+#define TS_BufPackets	64                           
 
 //# TS Buffer size
-#define TS_CalcBufSize(PacketSize)	(((PacketSize+0x1FF)&~0x1FF)*TS_BufPackets)
+#define TS_CalcBufSize(PacketSize)	(ROUNDUP(PacketSize,0x1FF)*TS_BufPackets)
 #define TS_BufSize		TS_CalcBufSize(TS_PacketSize)
 
-//# number of compensated read only bytes before the buffer busy memory area
+//# number of keeping read only bytes before the buffer busy memory area
 #define TS_CalcDeadZone(BufSize)	(BufSize/4)
 #define TS_DeadZone  	TS_CalcDeadZone(TS_BufSize)
 
 //# max number of submitted IO requests
-#define TS_MaxNumIO  24
+#define TS_MaxNumIO  64
 
-//# IO polling timeout (msec)
-#define TS_PollTimeout  25
-
-//# IO submitting timeout (msec)
-#define TS_SubmitTimeout  50
-
+//# 2020-11-3
+//#   Moved the definition "ROUNDUP" from the source file "tsthread.c".
+//#   Removed the definition "TS_PollTimeout"
+//#     that is moved to as variable "TSTHREAD_POLL_TIMEOUT" on "tsthread.c".
+//#   Removed the definition "TS_SubmitTimeout"
+//#     that is moved to as variable "TSTHREAD_SUBMIT_TIMEOUT" on "tsthread.c".
+//#   Removed the definition "TS_DeltaSize".
 //# 2020-10-31
 //#   Added the definition "TS_SubmitTimeout".
 //# 2020-10-5

@@ -6,8 +6,12 @@
 #pragma once
 #include "types_u.h"
 
-//# URB thread priority
+//# URB thread settings
 extern int TSTHREAD_PRIORITY;
+extern DWORD TSTHREAD_POLL_TIMEOUT;
+extern DWORD TSTHREAD_SUBMIT_TIMEOUT;
+extern int TSTHREAD_NUMIO ; //# number of I/O buffering
+extern int TSTHREAD_SUBMIT_IOLIMIT ; //# keeping number of I/O buffering at least
 
 //# pipe policy settings
 extern BOOL USBPIPEPOLICY_RAW_IO;
@@ -27,10 +31,10 @@ typedef void (*tsfifo_writethrough_t)(const void *buffer, size_t size, void *arg
 typedef void (*tsfifo_purge_t)(void *arg) ;
 
 struct tsfifo_t {
-  //# For the write-back caching  
+  //# For the write-back caching
   tsfifo_writeback_begin_t      writeBackBegin;
   tsfifo_writeback_finish_t     writeBackFinish;
-  //# For the write-through caching  
+  //# For the write-through caching
   tsfifo_writethrough_t         writeThrough;
   //# For purging the fifo cache
   tsfifo_purge_t                purge;

@@ -29,26 +29,26 @@ DWORD PastSleep(DWORD wait,DWORD start)
   return start+wait ;
 }
 //---------------------------------------------------------------------------
-wstring mbcs2wcs(string src)
+wstring mbcs2wcs(string src, UINT code_page)
 {
-    if(src.empty()) return wstring(L"") ;
-    BUFFER<wchar_t> wcs(src.length()*3 + 3);
-    size_t wLen = 0;
-    setlocale(LC_ALL,"japanese");
-    mbstowcs_s(&wLen, wcs.data(), src.length()*3+1 , src.c_str(), _TRUNCATE);
-    wstring result = wcs.data() ;
-    return result ;
+  int wLen = MultiByteToWideChar(code_page, 0, src.c_str(), (int)src.length(), NULL, 0);
+  if(wLen>0) {
+    BUFFER<wchar_t> wcs(wLen) ;
+    MultiByteToWideChar(code_page, 0, src.c_str(), (int)src.length(), wcs.data(), wLen);
+    return wstring(wcs.data(),wLen);
+  }
+  return wstring(L"");
 }
 //---------------------------------------------------------------------------
-string wcs2mbcs(wstring src)
+string wcs2mbcs(wstring src, UINT code_page)
 {
-    if(src.empty()) return string("") ;
-    BUFFER<char> mbcs(src.length()*3 + 3) ;
-    size_t mbLen = 0 ;
-    setlocale(LC_ALL,"japanese");
-    wcstombs_s(&mbLen, mbcs.data(), src.length()*3+1 , src.c_str(), _TRUNCATE);
-    string result = mbcs.data() ;
-    return result ;
+  int mbLen = WideCharToMultiByte(code_page, 0, src.c_str(), (int)src.length(), NULL, 0, NULL, NULL) ;
+  if(mbLen>0) {
+    BUFFER<char> mbcs(mbLen) ;
+    WideCharToMultiByte(code_page, 0, src.c_str(), (int)src.length(), mbcs.data(), mbLen, NULL, NULL);
+	return string(mbcs.data(),mbLen);
+  }
+  return string("");
 }
 //---------------------------------------------------------------------------
 string itos(int val,int radix)
@@ -104,16 +104,24 @@ string file_prefix_of(string filename)
 //---------------------------------------------------------------------------
 
     template<typename T>
-    class integer_c_expression_const_table 
+    class integer_c_expression_const_table
     {
     protected:
       typedef map<string,T> const_map_t;
       const_map_t const_map ;
+	  exclusive_object excl ;
     public:
-      void clear() { const_map.clear(); }
-      void entry(const string &name, const T val) { const_map[name]=val; }
-      bool find(const string &name, T &val) const {
-        const_map_t::const_iterator pos = const_map.find(name);
+      void clear() {
+	    exclusive_lock lock(&excl);
+		const_map.clear();
+	  }
+      void entry(const string name, const T val) {
+	    exclusive_lock lock(&excl);
+		const_map[name]=val;
+	  }
+      bool find(const string name, T &val) const {
+        exclusive_lock lock(const_cast<exclusive_object*>(&excl));
+		const_map_t::const_iterator pos = const_map.find(name);
         if(pos==const_map.end()) return false;
         val=pos->second ;
         return true;
@@ -213,16 +221,16 @@ string file_prefix_of(string filename)
             case 'G': nextTK.val<<=30, es++; break ; // Gi
             case 'T': nextTK.val<<=40, es++; break ; // Ti (over int)
             case 'P': nextTK.val<<=50, es++; break ; // Pi
-            case 'E': 
+            case 'E':
             case 'X': nextTK.val<<=60, es++; break ; // Ei
             case 'Z': nextTK.val<<=70, es++; break ; // Zi (over __int64)
-            case 'Y': nextTK.val<<=80, es++; break ; // Yi 
+            case 'Y': nextTK.val<<=80, es++; break ; // Yi
           }
           skip_val_literal(es) ;
         }
-        else if(!strncmp("**",es,2)) nextTK.token=tFACT,   es+=2; 
-        else if(!strncmp("<<",es,2)) nextTK.token=tLSHIFT, es+=2; 
-        else if(!strncmp(">>",es,2)) nextTK.token=tRSHIFT, es+=2; 
+        else if(!strncmp("**",es,2)) nextTK.token=tFACT,   es+=2;
+        else if(!strncmp("<<",es,2)) nextTK.token=tLSHIFT, es+=2;
+        else if(!strncmp(">>",es,2)) nextTK.token=tRSHIFT, es+=2;
         else {
           switch(*es) {
             case '+': nextTK.token=tADD; break;
@@ -245,7 +253,7 @@ string file_prefix_of(string filename)
                 skip_val_literal(e) ;
                 if(const_table->find(string(es,e-es),nextTK.val)) {
                   nextTK.token=tVAL;
-                  es=e-1; 
+                  es=e-1;
                   break;
                 }
               }
@@ -419,7 +427,7 @@ string file_prefix_of(string filename)
         return ret ;
       }
     };
-    
+
 
 //----- acalci entity -----------------------------------------------
 /* Calculate the c-expression string and convert it to an integer. */
@@ -948,6 +956,49 @@ bool CAsyncFifo::WaitForAllocation()
 
     return result ;
 }
+//===========================================================================
+// Initializer
+//---------------------------------------------------------------------------
+
+  class pryutil_initializer
+  {
+  protected:
+    void init_acalci_constants(bool first) {
+    #define ACALCI_ENTRY_CONST(name) do { \
+        acalci_entry_const(#name,(int)name); \
+        acalci64_entry_const(#name,(__int64)name); \
+        }while(0)
+      if(first) {
+        acalci_entry_const();
+        acalci64_entry_const();
+      }
+      const int n=FALSE,y=TRUE;
+      ACALCI_ENTRY_CONST(NULL);
+      ACALCI_ENTRY_CONST(n);
+      ACALCI_ENTRY_CONST(y);
+      ACALCI_ENTRY_CONST(INT_MIN);
+      ACALCI_ENTRY_CONST(INT_MAX);
+      ACALCI_ENTRY_CONST(INFINITE);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_IDLE);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_LOWEST);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_BELOW_NORMAL);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_NORMAL);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_ABOVE_NORMAL);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_HIGHEST);
+      ACALCI_ENTRY_CONST(THREAD_PRIORITY_TIME_CRITICAL);
+    #undef ACALCI_ENTRY_CONST
+    }
+  public:
+    pryutil_initializer(bool first) {
+      // initialize locale to japanese for the string converters
+      if(first) setlocale(LC_ALL, "japanese") ;
+      // initialize constants
+      init_acalci_constants(first) ;
+    }
+  };
+
+  static pryutil_initializer static_initializer(true);
+
 //---------------------------------------------------------------------------
 } // End of namespace PRY8EAlByw
 //===========================================================================

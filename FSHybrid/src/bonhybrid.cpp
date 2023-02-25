@@ -37,10 +37,10 @@ DWORD ASYNCTS_QUEUENUM     = 66  ; // Default 3M (47K*66) bytes
 DWORD ASYNCTS_QUEUEMAX     = 660 ; // Maximum growth 30M (47K*660) bytes
 DWORD ASYNCTS_EMPTYBORDER  = 22  ; // Empty border at least 1M (47K*22) bytes
 DWORD ASYNCTS_EMPTYLIMIT   = 11  ; // Empty limit at least 0.5M (47K*11) bytes
-const DWORD TSTHREADWAIT   = TS_PollTimeout ;
-const bool TSALLOCWAITING  = false ;
-const bool TSALLOCMODERATE = true ;
-int TSALLOC_PRIORITY = THREAD_PRIORITY_HIGHEST ;
+DWORD TSALLOC_TIMEOUT      = 100 ;
+BOOL  TSALLOC_WAITING      = FALSE ;
+BOOL  TSALLOC_MODERATE     = TRUE ;
+int   TSALLOC_PRIORITY     = THREAD_PRIORITY_HIGHEST ;
 
 // 既定のチャンネル情報にVHFを含めるかどうか
 BOOL DEFSPACE_VHF = FALSE ;
@@ -61,8 +61,9 @@ DWORD DEFSPACE_CS110_STREAMS = 8 ;
 // IBonDriverのSetChannelにユーザーチャンネルを使用するかどうか
 BOOL BYTETUNING_USER = FALSE ;
 
-// デバイス初期化に失敗した場合に再試行する最大回数
-DWORD DEVICE_RETRY_TIMES = 3 ;
+// 初期化に失敗した場合の再試行設定
+DWORD DEVICE_RETRY_TIMES = 3 ;       // デバイス初期化再試行最大回数
+DWORD TUNER_RETRY_DURATION = 3000 ;  // チューナーのオープン最大再試行時間
 
 }
 
@@ -445,7 +446,7 @@ bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
 	FifoFinalize();
 	if(!TSCACHING_LEGACY) {
 		if(m_eoCaching.is_valid()) {
-			size_t TSDATASIZE = ((usbep->xfer_size+TS_DeltaSize+0x1FFUL)&~0x1FFUL) ;
+			size_t TSDATASIZE = ROUNDUP(usbep->xfer_size,0x1FFUL) ;   
 			if(usbep->endpoint&0x100) {  // Isochronous
 				// アイソクロナス転送の場合は、強制的に整合化する
 				if(!TSCACHING_DEFRAGMENT) {
@@ -460,10 +461,10 @@ bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
 			DBGOUT("TSDATASIZE=%d\n",TSDATASIZE) ;
 			m_fifo = new CAsyncFifo(
 				ASYNCTS_QUEUENUM,ASYNCTS_QUEUEMAX,ASYNCTS_EMPTYBORDER,
-				TSDATASIZE,TSTHREADWAIT,TSALLOC_PRIORITY ) ;
+				TSDATASIZE,TSALLOC_TIMEOUT,TSALLOC_PRIORITY ) ;
 			if(m_fifo) {
 				m_fifo->SetEmptyLimit(ASYNCTS_EMPTYLIMIT) ;
-				m_fifo->SetModerateAllocating(TSALLOCMODERATE);
+				m_fifo->SetModerateAllocating(TSALLOC_MODERATE?true:false);
 				if(TSCACHING_DEFRAGMENT) {
 					tsfifo.writeThrough = &OnTSFifoWriteThrough ;
 				}else {
@@ -619,6 +620,9 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(ASYNCTS_QUEUEMAX);
 	LOADDW(ASYNCTS_EMPTYBORDER);
 	LOADDW(ASYNCTS_EMPTYLIMIT);
+	LOADDW(TSALLOC_TIMEOUT);
+	LOADDW(TSALLOC_WAITING);
+	LOADDW(TSALLOC_MODERATE);
 	LOADDW(TSALLOC_PRIORITY);
 	LOADDW(DEFSPACE_VHF);
 	LOADDW(DEFSPACE_UHF);
@@ -630,10 +634,15 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEFSPACE_CS110_STREAMS);
 	LOADDW(BYTETUNING_USER);
 	LOADDW(DEVICE_RETRY_TIMES);
+	LOADDW(TUNER_RETRY_DURATION);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
 	LOADDW(TSTHREAD_PRIORITY);
- 	LOADDW(USBPIPEPOLICY_RAW_IO);
+	LOADDW(TSTHREAD_POLL_TIMEOUT);
+	LOADDW(TSTHREAD_SUBMIT_TIMEOUT);
+	LOADDW(TSTHREAD_NUMIO);
+	LOADDW(TSTHREAD_SUBMIT_IOLIMIT);
+	LOADDW(USBPIPEPOLICY_RAW_IO);
 	LOADDW(USBPIPEPOLICY_AUTO_CLEAR_STALL);
 	LOADDW(USBPIPEPOLICY_ALLOW_PARTIAL_READS);
 	LOADDW(USBPIPEPOLICY_AUTO_FLUSH);
@@ -660,20 +669,11 @@ void CBonFSHybrid::Initialize()
 //---------------------------------------------------------------------------
 void CBonFSHybrid::InitConstants()
 {
-#define ACALCI_ENTRY_CONST(name) acalci_entry_const(#name,(int)name)
+#define ACALCI_ENTRY_CONST(name) do { \
+		acalci_entry_const(#name,(int)name); \
+		acalci64_entry_const(#name,(__int64)name); \
+		}while(0)
 	const int TS_OriginalPacketSize =  188*245 ;
-	acalci_entry_const();
-	ACALCI_ENTRY_CONST(NULL);
-	ACALCI_ENTRY_CONST(INT_MIN);
-	ACALCI_ENTRY_CONST(INT_MAX);
-	ACALCI_ENTRY_CONST(INFINITE);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_IDLE);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_LOWEST);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_BELOW_NORMAL);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_NORMAL);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_ABOVE_NORMAL);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_HIGHEST);
-	ACALCI_ENTRY_CONST(THREAD_PRIORITY_TIME_CRITICAL);
 	ACALCI_ENTRY_CONST(TS_MaxNumIO);
 	ACALCI_ENTRY_CONST(TS_BufPackets);
 	ACALCI_ENTRY_CONST(TS_PacketSize);
@@ -683,6 +683,14 @@ void CBonFSHybrid::InitConstants()
 	ACALCI_ENTRY_CONST(ISOCH_PacketFrames);
 	#endif
 #undef ACALCI_ENTRY_CONST
+}
+//---------------------------------------------------------------------------
+const BOOL CBonFSHybrid::OpenTuner()
+{
+	if(IsTunerOpening()) return FALSE;
+	BOOL r; DWORD e=Elapsed();
+	do { r=TryOpenTuner(); } while (!r && Elapsed(e)<TUNER_RETRY_DURATION);
+	return r ;
 }
 //---------------------------------------------------------------------------
 const BOOL CBonFSHybrid::SetChannel(const BYTE bCh)
@@ -801,7 +809,7 @@ void *CBonFSHybrid::OnTSFifoWriteBackBegin(int id, size_t max_size, void *arg)
 {
 	if(id<0||id>=TS_MaxNumIO) return NULL ;
 	CBonFSHybrid *tuner = static_cast<CBonFSHybrid*>(arg) ;
-	CAsyncFifo::CACHE *cache = tuner->m_fifo->BeginWriteBack(TSALLOCWAITING) ;
+	CAsyncFifo::CACHE *cache = tuner->m_fifo->BeginWriteBack(TSALLOC_WAITING?true:false) ;
 	if(!cache) return NULL ;
 	else cache->resize(max_size) ;
 	tuner->m_coPurge.lock() ;
@@ -829,7 +837,7 @@ void CBonFSHybrid::OnTSFifoWriteThrough(const void *buffer, size_t size, void *a
 	CBonFSHybrid *tuner = static_cast<CBonFSHybrid*>(arg) ;
 	exclusive_lock purgeLock(&tuner->m_coPurge);
 	if ( tuner->m_fifo->Push(static_cast<const BYTE*>(buffer),
-		 static_cast<DWORD>(size), false, TSALLOCWAITING) > 0)
+		 static_cast<DWORD>(size), false, TSALLOC_WAITING?true:false) > 0)
 			tuner->m_eoCaching.set();
 }
 //---------------------------------------------------------------------------

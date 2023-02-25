@@ -9,7 +9,7 @@ namespace FSUSB2N {
 DWORD FSUSB2N_INTERIM_WAIT       = 20 ;
 DWORD FSUSB2N_SETFREQ_TIMES      = 2 ;
 DWORD FSUSB2N_RESETDEMOD_TIMES   = 1 ;
-BOOL  FSUSB2N_LOCK_ON_SIGNAL     = TRUE ; 
+BOOL  FSUSB2N_LOCK_ON_SIGNAL     = TRUE ;
 
 const TCHAR *g_RegKey = TEXT("Software\\tri.dw.land.to\\FSUSB2N");
 
@@ -40,7 +40,7 @@ int CBonTuner::UserDecidedDeviceIdx()
 	return -1 ;
 }
 
-const BOOL CBonTuner::OpenTuner()
+const BOOL CBonTuner::TryOpenTuner()
 {
 	CloseTuner();
 
@@ -129,7 +129,7 @@ const float CBonTuner::GetSignalLevel(void)
 	if(pDev == NULL) return 0.0f;
 
 	const bool do_locking = FSUSB2N_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
-    
+
 	if(do_locking) //# lock
 		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
 
@@ -163,7 +163,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	if(NULL == pDev) return FALSE;
 	if(NULL == tsthr) return FALSE;
 
-	
+
     DWORD dwFreq = GetChannel(dwSpace,dwChannel).Freq ;
 
 	if(dwFreq < 90000U || dwFreq > 772000U) return FALSE;
@@ -174,7 +174,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	::Sleep(FSUSB2N_INTERIM_WAIT);
 
 	const bool do_locking = FSUSB2N_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
-    
+
 	if(do_locking) //# lock
 		m_USBEP.lockunlockFunc(m_USBEP.dev,1);
 
@@ -199,7 +199,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	// ChannelèÓïÒçXêV
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
-    
+
 	return TRUE;
 }
 

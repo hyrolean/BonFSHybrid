@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2022/5/3
+BonDriver_FSHybrid.dll MOD @ 2022/8/11
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,11 @@ BonDriver_FSHybrid.dll MOD @ 2022/5/3
 
 
 ■更新履歴
+
+2022/5/3 からの変更点
+
+  ・アイソクロナス転送有効時に、チャンネルを切り替えたあとに稀にストリームが
+    ストール(停止)することのある現象を修正
 
 2021/12/7 からの変更点
 

@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/10/12
+BonDriver_FSHybrid.dll MOD @ 2020/10/14
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -36,6 +36,7 @@ BonDriver_FSHybrid.dll MOD @ 2020/10/12
 
 2020/10/9 からの変更点
 
+  ・アイソクロナス転送の負荷を多少改善
   ・iniファイルにNULLパケットをシャットアウトするかどうかを判断するためのフラグ
     TSCACHING_DROPNULLPACKETS 項目を追加
 
@@ -51,9 +52,9 @@ BonDriver_FSHybrid.dll MOD @ 2020/10/12
 2020/4/27 からの変更点
 
   ・iniファイルに以下の三系統のシグナル取得時排他に関わるフラグを追加
-  
+
      FSUSB2N_LOCK_ON_SIGNAL / FSUSB2I_LOCK_ON_SIGNAL / USUNPTV_LOCK_ON_SIGNAL
-  
+
 2020/1/12 からの変更点
 
   ・dBが良くてもなぜかとりこぼす謎のプチドロップ現象の根本的な問題を修正

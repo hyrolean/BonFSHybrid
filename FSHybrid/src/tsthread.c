@@ -16,9 +16,7 @@
 #include "tsbuff.h"
 #include "tsthread.h"
 
-#if defined(_WIN32) && !defined(_WIN64)
-//#define X86_ASM
-#endif
+//#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES
 
 #define HasSignal(e) (WaitForSingleObject(e,0)==WAIT_OBJECT_0)
 
@@ -125,9 +123,8 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 	}
 	if(ps->actual_length) {
 		if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
-			for (i = 0;i < ps->buff_num;i++) {
-				ps->actual_length[i]=-1 ;
-			}
+			memset(&ps->actual_length[0],0xFF,
+				ps->buff_num*sizeof(ps->actual_length[0]));
 			ps->buff_pop = ps->buff_push ;
 		}
 		else { //# Isochronous
@@ -345,9 +342,9 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								if (pDesc->Status) {
 									pLen[n-1] =  0;
 									warn_msg(dRet, "reapURB%u.%u", ri, n-1);
+									continue;
 								}
-								else
-									pLen[n-1] = pDesc->Length ;
+								pLen[n-1] = pDesc->Length ;
 							}
 #endif
 #endif
@@ -378,12 +375,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			DBGOUT("io stall\n");
 
 		}
-
 		if(hasWThrough) {
 
 			//# write through caching
-			BYTE *esi=NULL,*edi ;
-			int sz,amount=0;
+			char *esi = NULL, *edi ;
+			int sz, amount = 0 ;
 			do {
 				edi = NULL ;
 				sz  = tsthread_read( ps, (void**) &edi ) ;
@@ -397,7 +393,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					if(esi) pTSFifo->writeThrough(esi, amount, pTSFifo->arg) ;
 					esi=edi, amount=sz ;
 				}
-			}while(esi);
+			}while(esi) ;
 
 		}
 
@@ -420,7 +416,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					#if 1
 					if(ps->buff_push==ps->buff_pop)
 						max_empties =
-							last_state>0||last_state==-2 ? 0 : ps->buff_num ;
+							last_state==-1 ? ps->buff_num : 0 ;
 					else
 					#endif
 						max_empties = ps->buff_push<ps->buff_pop ?
@@ -470,16 +466,37 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						buffer = pTSFifo->writeBackBegin(si, ps->buff_unitSize, pTSFifo->arg) ;
 						if(!buffer) break ; //# buffer overflow
 					}
+#ifdef STRICTLY_CHECK_EMPTY_FRAMES
 					else {
 						register int n,*p=&ps->actual_length[ps->buff_push] ;
-						for(n=frames;n;n--)
-							if(p[n-1]>0||p[n-1]==-2) break;
+						if(frames==1)
+							n = *p==-1 ? 0: 1;
+						else {
+#if defined(_WIN32) && !defined(_WIN64)
+							_asm {
+								mov eax, -1
+								mov edi, p
+								mov ecx, frames
+								cld
+								repe scasd //# dw string scan
+								mov n, ecx
+							}
+#else
+#if defined(_WIN32) && defined(_WIN64)
+							if(!(frames&1)) for(n=frames*sizeof(*p)/sizeof(__int64);n;n--) {
+								if(((__int64*)p)[n-1]!=-1) break ; //# qw scan
+							}else
+#endif
+							for(n=frames;n;n--) { if(p[n-1]!=-1) break; }
+#endif
+						}
 						if(n) break ; //# buffer busy
 					}
+#endif
 					EnterCriticalSection(&ps->csTsExclusive) ;
 					if(!isWBack) {
-						buffer = ps->buffer + (ps->buff_push * ps->buff_unitSize) ;
-						last_state =  ps->actual_length[ps->buff_push] ;
+						buffer = ps->buffer + ps->buff_push * ps->buff_unitSize ;
+						last_state = ps->actual_length[ps->buff_push] ;
 						ps->actual_length[ps->buff_push] = -2;
 					}
 					pContext->index = isWBack ? si : ps->buff_push;
@@ -497,9 +514,9 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 #ifdef INCLUDE_ISOCH_XFER
 							bRet = WinUsb_ReadIsochPipeAsap(
 								ps->hIsochBuffer,
-								ps->buff_push * ps->buff_unitSize, // offset
-								frames * ps->buff_unitSize,  // length
-								ps->flags & 0x10 ? TRUE: FALSE, // continuous
+								ps->buff_push * ps->buff_unitSize, /*offset*/
+								frames * ps->buff_unitSize,  /*length*/
+								ps->flags & 0x10 ? TRUE: FALSE, /*continuous*/
 								frames, pContext->isochFrameDesc,
 								&(pContext->ol));
 							dRet = GetLastError();
@@ -528,11 +545,16 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					}else {
 						//# submitting succeeded
 						if(!isWBack) {
-#if defined(INCLUDE_ISOCH_XFER)
-							if(frames>1)
+#ifdef STRICTLY_CHECK_EMPTY_FRAMES
+							if(frames>1) {
+#if 0
+								//# fill all frames
 								__stosd(&ps->actual_length[ps->buff_push+1],-2,frames-1);
-#elif defined(_DEBUG)
-							assert(frames==1);
+#else
+								//# make a gatekeeper frame
+								ps->actual_length[ps->buff_push+frames-1]=-2;
+#endif
+							}
 #endif
 							if(ps->buff_push+frames>=ps->buff_num)
 								ps->buff_push=0;
@@ -637,8 +659,8 @@ int tsthread_create( tsthread_ptr* const tptr,
 		ps->buff_size = buffSize;
 		assert(ptr-buffer_ptr==totalSize) ;
 		if ( actlen_size ) {
-			for ( i = 0;i < unitNum;i++ )
-				ps->actual_length[ i ] = -1;   //# reset all values to empty
+			//# reset all values to empty
+			memset(&ps->actual_length[0],0xFF,actlen_size);
 		}else
 			ps->actual_length = NULL;
 		if ( tsfifo_exists ) {
@@ -860,8 +882,7 @@ int tsthread_readable(const tsthread_ptr tptr)
 	if(0 > j || ps->buff_num <= j) {  //# bug check
 		warn_info(j,"ts.buff_pop Out of range");
 		j = -1;
-	}
-	else do {  //# skip empty blocks
+	}else do {  //# skip empty blocks
 		if(!ps->actual_length[j]) {
 			ps->actual_length[j]=-1;
 		}else break;

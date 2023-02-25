@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/10/14
+BonDriver_FSHybrid.dll MOD @ 2020/10/21
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,10 @@ BonDriver_FSHybrid.dll MOD @ 2020/10/14
 
 
 ■更新履歴
+
+2020/10/17 からの変更点
+
+  ・iniファイルの整数項目に計算式を書くことのできる機能を追加
 
 2020/10/9 からの変更点
 

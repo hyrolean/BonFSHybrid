@@ -99,6 +99,311 @@ string file_prefix_of(string filename)
   return string(szName) ;
 }
 //===========================================================================
+// acalci
+//---------------------------------------------------------------------------
+
+    class integer_c_expression_string_calculator
+    {
+    protected:
+      enum token_t {
+        tSTART      =  0,
+        tEND        =  1,
+        tVAL        = 10,
+        tPLUS       = 20, /* prec ADD */
+        tMINUS      = 21, /* prec SUB */
+        tNOT        = 22,
+        tFACT       = 30,
+        tMUL        = 40,
+        tDIV        = 41,
+        tMOD        = 42,
+        tADD        = 50,
+        tSUB        = 51,
+        tLSHIFT     = 60,
+        tRSHIFT     = 61,
+        tAND        = 70,
+        tXOR        = 80,
+        tOR         = 90,
+        tLP         = 100,
+        tRP         = 101,
+      };
+      struct node_t {
+        token_t token ;
+        int val ;
+        struct node_t *next ;
+      };
+      node_t *top ;
+      int def_val ;
+      const char *es ;
+    protected:
+      int __fastcall parse(node_t *backTK) {
+        node_t nextTK;
+        backTK->next = &nextTK;
+        while(*es==' '||*es=='\t'||*es=='\r'||*es=='\n')
+          es++;
+        if(!*es||*es==';') {
+          nextTK.token=tEND;
+          return calculate();
+        }
+        if(es[0]=='0') {
+          char *e=NULL;
+          if(es[1]=='b'||es[1]=='B') {  // bin
+            nextTK.val=(int)strtol(es+=2,&e,2);
+            nextTK.token=tVAL;
+            if(e) es=e;
+          }else if(es[1]=='x'||es[1]=='X') { // hex
+            nextTK.val=(int)strtol(es+=2,&e,16);
+            nextTK.token=tVAL;
+            if(e) es=e;
+          }else if(es[1]>='0'&&es[1]<='7') { // oct
+            nextTK.val=(int)strtol(es+1,&e,8);
+            nextTK.token=tVAL;
+            if(e) es=e; else es+=2;
+          }else { // 0 ( dec? )
+            nextTK.val=(int)strtol(es++,&e,10);
+            nextTK.token=tVAL;
+            if(e) es=e;
+          }
+        }
+        else if(*es>='1'&&*es<='9') { // dec
+          char *e=NULL;
+          nextTK.val=(int)strtol(es++,&e,10);
+          nextTK.token=tVAL;
+          if(e) es=e;
+        }
+        else if(*es=='+') { nextTK.token=tADD; es++; }
+        else if(*es=='-') { nextTK.token=tSUB; es++; }
+        else if(*es=='~') { nextTK.token=tNOT; es++; }
+        else if(!strncmp("**",es,2)) { nextTK.token=tFACT; es+=2; }
+        else if(*es=='*') { nextTK.token=tMUL; es++; }
+        else if(*es=='/') { nextTK.token=tDIV; es++; }
+        else if(*es=='%') { nextTK.token=tDIV; es++; }
+        else if(!strncmp("<<",es,2)) { nextTK.token=tLSHIFT; es+=2; }
+        else if(!strncmp(">>",es,2)) { nextTK.token=tRSHIFT; es+=2; }
+        else if(*es=='&') { nextTK.token=tAND; es++; }
+        else if(*es=='^') { nextTK.token=tXOR; es++; }
+        else if(*es=='|') { nextTK.token=tOR; es++; }
+        else if(*es=='(') { nextTK.token=tLP; es++; }
+        else if(*es==')') { nextTK.token=tRP; es++; }
+        else {nextTK.token=tEND; return calculate();}
+        return parse(&nextTK);
+      }
+      int calculate() {
+        int num=0;
+        node_t *p=top->next;
+        while(p->token!=tEND) {
+          num++;
+          p=p->next;
+        }
+        return do_calculate(num,top->next);
+      }
+      static node_t* nest_node(node_t *p,int num) {
+        while(num>0) {p=p->next;num--;}
+        return p;
+      }
+      int do_calculate(int num,node_t *pos)
+      {
+      #define D1(a)  (p->token==(a))
+      #define D2(a,b)  (D1(a)&&p->next->token==(b))
+      #define D3(a,b,c) (D2(a,b)&&p->next->next->token==(c))
+        node_t *p,*q;
+        int bk_num=0;
+        if(pos) while(num>1) {
+          if(bk_num==num) {
+            // これ以上計算が進まないので、ここで中断する
+            if(pos->token==tVAL)
+              num=1; // VAL が検出できているので、結果おｋということにする
+            break ;
+          }
+          bk_num=num;
+          //PRIOR20: + - ~ (single)
+          p=pos ; q=NULL;
+          for(int i=0;i<num-1;i++,q=p,p=p->next) {
+            if(q&&(q->token==tVAL||q->token==tRP)) // NG: 左辺値が存在
+              continue;
+            else if(D2(tADD,tVAL)) {
+              p->val= + p->next->val;
+              p->token=tVAL;
+              p->next=nest_node(p,2);
+              num--;
+            }
+            else if(D2(tSUB,tVAL)) {
+              p->val= - p->next->val;
+              p->token=tVAL;
+              p->next=nest_node(p,2);
+              num--;
+            }
+            else if(D2(tNOT,tVAL)) {
+              p->val= ~ p->next->val;
+              p->token=tVAL;
+              p->next=nest_node(p,2);
+              num--;
+            }
+          }
+          //PRIOR30: **
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tFACT,tVAL)) {
+              int val=p->val;
+              q=p->next->next;
+              if(q->val==0)
+                p->val=1;
+              else if(q->val<0)
+                p->val=0;
+              else while(q->val-1) {
+                p->val*=val;
+                q->val--;
+              }
+              p->next=q->next;
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR40: * / %
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tMUL,tVAL)) {
+              p->val=p->val * p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else if(D3(tVAL,tDIV,tVAL)) {
+              p->val=p->val / p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else if(D3(tVAL,tMOD,tVAL)) {
+              p->val=p->val % p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR50: + -
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tADD,tVAL)) {
+              p->val=p->val + p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else if(D3(tVAL,tSUB,tVAL)) {
+              p->val=p->val - p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR60: << >>
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tLSHIFT,tVAL)) {
+              p->val=p->val << p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else if(D3(tVAL,tRSHIFT,tVAL)) {
+              p->val=p->val >> p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR70: &
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tAND,tVAL)) {
+              p->val=p->val & p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR80: ^
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tXOR,tVAL)) {
+              p->val=p->val ^ p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR90: |
+          p=pos;
+          for(int i=0;i<num-2;) {
+            if(D3(tVAL,tOR,tVAL)) {
+              p->val=p->val | p->next->next->val;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+            else {i++;p=p->next;}
+          }
+          //PRIOR100: ( VAL )
+          p=pos;
+          for(int i=0;i<num-2;i++,p=p->next) {
+            if(D3(tLP,tVAL,tRP)) {
+              p->val= ( p->next->val );
+              p->token=tVAL;
+              p->next=nest_node(p,3);
+              num-=2;
+            }
+          }
+        }
+        //PRIOR10: VAL or not
+        return pos&&pos->token==tVAL&&num==1? pos->val: def_val;
+      #undef D1
+      #undef D2
+      #undef D3
+      }
+    public:
+      int execute(const char *expression_string, int default_value) {
+        node_t sTK ;
+        sTK.token = tSTART ;
+        top = &sTK ;
+        es = expression_string ;
+        def_val = default_value ;
+        return es ? parse(top) : def_val ;
+      }
+    };
+
+//----- acalci 本体 -------------------------------------
+/* acalci 文字列計算式を計算して、整数に変換する。 */
+/********************************************************
+
+  int acalci(const char *s)
+
+    s:計算式を書いた文字列。
+    計算式と結合法則: (下方程、優先順位が低くなる。)
+    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+        + - ~ (単項)                ←
+        ** (乗算)                   →
+        * / %                       →
+        + -                         →
+        << >>                       →
+        &                           →
+        ^                           →
+        |                           →
+        ( )                         →
+    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+    式の意味はＣ言語で常時使っているものと同様。
+    項には、整数のみ使用可能。変数は使用不可。
+    項: 全て､整数。以下、正規表現での略式表記。
+    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+      0[bB][01]+            ニ進数
+      [1-9][0-9]+           十進数
+      [0-7]+                八進数
+      0[xX][0-9a-fA-F]+     十六進数
+    ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+    セパレーター： スペース/タブ/キャリッジリターン/ニューラインコード
+
+********************************************************/
+int acalci(const char *s, int defVal)
+{
+  integer_c_expression_string_calculator calculator ;
+  return calculator.execute(s, defVal) ;
+}
+
+//===========================================================================
 // event_object
 //---------------------------------------------------------------------------
 static int event_create_count = 0 ;
@@ -219,17 +524,17 @@ CAsyncFifo::CAsyncFifo(
   size_t packetSize, DWORD threadWait,int threadPriority)
   : MaximumPool(max(1,max(initialPool,maximumPool))),
     TotalPool(min(max(1,initialPool),MaximumPool)),
-	Writing(WRITING_NONE),
+    Writing(WRITING_NONE),
     Indices(MaximumPool),
     EmptyIndices(MaximumPool),
     EmptyBorder(emptyBorder),
-	EmptyLimit(0),
+    EmptyLimit(0),
     PacketSize(packetSize),
     THREADWAIT(threadWait),
     AllocThread(NULL),
     AllocOrderEvent(FALSE),
     AllocatedEvent(FALSE),
-	ModerateAllocating(true),
+    ModerateAllocating(true),
     Terminated(false)
 {
     DWORD flag = HEAP_NO_SERIALIZE ;
@@ -256,7 +561,7 @@ CAsyncFifo::CAsyncFifo(
           AllocThread = NULL;
       }else{
           SetThreadPriority(AllocThread,threadPriority);
-		  ::ResumeThread(AllocThread) ;
+          ::ResumeThread(AllocThread) ;
       }
     }
 }
@@ -380,7 +685,7 @@ size_t CAsyncFifo::Push(const BYTE *data, DWORD len, bool ignoreFragment,bool al
 
       elock.lock();
 
-	  if(EmptyIndices.empty()) return n ;
+      if(EmptyIndices.empty()) return n ;
       // get the empty index
       WritingIndex = EmptyIndices.front() ;
       EmptyIndices.pop() ;
@@ -449,9 +754,9 @@ void CAsyncFifo::Purge(bool purgeWriteBack)
         Indices.pop() ;
     }
     if(Writing!=WRITING_NONE) {
-		EmptyIndices.push(WritingIndex) ;
-		Writing = WRITING_NONE ;
-	}
+        EmptyIndices.push(WritingIndex) ;
+        Writing = WRITING_NONE ;
+    }
 
     if(purgeWriteBack) {
         for(WRITEBACKMAP::iterator pos = WriteBackMap.begin() ;
@@ -470,45 +775,45 @@ unsigned int CAsyncFifo::AllocThreadProcMain ()
         if (Terminated) break;
         bool doAllocate = false;
         switch(dwRet) {
-          	case WAIT_OBJECT_0: // Allocation ordered
-            	elock.lock() ;
-				doAllocate = Growable() ;
+            case WAIT_OBJECT_0: // Allocation ordered
+                elock.lock() ;
+                doAllocate = Growable() ;
                 if(EmptyIndices.size() > EmptyBorder)
                   AllocatedEvent.set() ;
-            	elock.unlock() ;
-				break ;
-		  	case WAIT_TIMEOUT:
-				if(!ModerateAllocating) {
-            	  elock.lock() ;
-				  doAllocate = Growable() && EmptyIndices.size() <= EmptyBorder ;
-            	  elock.unlock() ;
-				}
-				break ;
-			case WAIT_FAILED:
-				return 1;
-		}
-		if(doAllocate) {
+                elock.unlock() ;
+                break ;
+            case WAIT_TIMEOUT:
+                if(!ModerateAllocating) {
+                  elock.lock() ;
+                  doAllocate = Growable() && EmptyIndices.size() <= EmptyBorder ;
+                  elock.unlock() ;
+                }
+                break ;
+            case WAIT_FAILED:
+                return 1;
+        }
+        if(doAllocate) {
             bool failed=false ;
             do {
                 elock.unlock() ;
-				BufferPool[TotalPool].resize(PacketSize); // Allocating...
+                BufferPool[TotalPool].resize(PacketSize); // Allocating...
                 if(BufferPool[TotalPool].size()!=PacketSize) {
                   failed = true ; break ;
                 }
                 elock.lock() ;
                 EmptyIndices.push_front(TotalPool++) ;
-				elock.unlock() ;
-				AllocatedEvent.set();
+                elock.unlock() ;
+                AllocatedEvent.set();
                 if (Terminated) break;
-				if (ModerateAllocating) break;
-				elock.lock() ;
-			} while (Growable() && EmptyIndices.size() <= EmptyBorder );
+                if (ModerateAllocating) break;
+                elock.lock() ;
+            } while (Growable() && EmptyIndices.size() <= EmptyBorder );
             elock.unlock() ;
             if(failed)
               DBGOUT("Async FIFO allocation: allocation failed!\r\n") ;
             else
               DBGOUT("Async FIFO allocation: total %d bytes grown.\r\n",
-  				  int((TotalPool)*PacketSize)) ;
+                  int((TotalPool)*PacketSize)) ;
         }
         if (Terminated) break;
     }
@@ -526,37 +831,37 @@ unsigned int __stdcall CAsyncFifo::AllocThreadProc (PVOID pv)
 //---------------------------------------------------------------------------
 bool CAsyncFifo::WaitForAllocation()
 {
-	exclusive_lock elock(&Exclusive) ;
+    exclusive_lock elock(&Exclusive) ;
 
-	size_t n=EmptyIndices.size() ;
-	if(n>EmptyBorder) {
-	  return true ;
-	}
+    size_t n=EmptyIndices.size() ;
+    if(n>EmptyBorder) {
+      return true ;
+    }
 
     DBGOUT("Async FIFO allocation: allocation waiting...\r\n") ;
 
     bool result = false ;
 
       do {
-		if (!Growable()) break ;
-		elock.unlock() ;
-		AllocOrderEvent.set();
-		DWORD res = AllocatedEvent.wait(THREADWAIT) ;
-		if(res==WAIT_FAILED) break ;
-		elock.lock() ;
- 		size_t m = EmptyIndices.size();
-		if (n < m) {
-			if (ModerateAllocating&&m>EmptyLimit)
-				result = true;
-			n = m;
-		}
-		if (n > EmptyBorder) result = true ;
+        if (!Growable()) break ;
+        elock.unlock() ;
+        AllocOrderEvent.set();
+        DWORD res = AllocatedEvent.wait(THREADWAIT) ;
+        if(res==WAIT_FAILED) break ;
+        elock.lock() ;
+        size_t m = EmptyIndices.size();
+        if (n < m) {
+            if (ModerateAllocating&&m>EmptyLimit)
+                result = true;
+            n = m;
+        }
+        if (n > EmptyBorder) result = true ;
         if(result) break ;
-	  }while(!Terminated) ;
+      }while(!Terminated) ;
 
     DBGOUT("Async FIFO allocation: allocation waiting %s.\r\n",result?"completed":"failed") ;
 
-	return result ;
+    return result ;
 }
 //---------------------------------------------------------------------------
 } // End of namespace PRY8EAlByw

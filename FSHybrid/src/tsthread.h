@@ -24,10 +24,10 @@ typedef void (*tsfifo_writethrough_t)(const void *buffer, size_t size, void *arg
 typedef void (*tsfifo_purge_t)(void *arg) ;
 
 struct tsfifo_t {
-  //# For the write back caching  
+  //# For the write-back caching  
   tsfifo_writeback_begin_t      writeBackBegin;
   tsfifo_writeback_finish_t     writeBackFinish;
-  //# For the write through caching  
+  //# For the write-through caching  
   tsfifo_writethrough_t         writeThrough;
   //# For purging the fifo cache
   tsfifo_purge_t                purge;

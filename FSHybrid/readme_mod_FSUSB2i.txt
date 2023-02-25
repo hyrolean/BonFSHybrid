@@ -69,6 +69,7 @@ BonDriver_FSUSB2i.dll MOD @ 2020/5/22
       ASYNCTS_EMPTYBORDER … アロケーション開始空バッファ下限数 規定値12 750KB
       ASYNCTS_EMPTYLIMIT … オーバーラップから保障するバッファ数 規定値6 375KB
 
+	  
 ■使用制限
 
   無保証（NO WARRANTY）

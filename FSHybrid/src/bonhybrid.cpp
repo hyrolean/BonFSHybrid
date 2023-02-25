@@ -124,23 +124,29 @@ public:
 class CIniValueLoader : public IValueLoader
 {
 	string Section, Filename ;
+	string ReadStringA(const string name,const string defStr) const {
+		const size_t MAX_CHARS = 1024 ;
+		char buf[MAX_CHARS] ;
+		DWORD num = GetPrivateProfileStringA(
+			Section.c_str(),name.c_str(),defStr.c_str(),
+			buf,MAX_CHARS,Filename.c_str());
+		return num>0 ? string(buf,num) : defStr ;
+	}
 public:
 	CIniValueLoader(const string section,const string filename)
 	{ Section=section; Filename=filename; }
 	virtual DWORD ReadDWORD(const wstring name,DWORD defVal=0) const {
+	#if 0
 		return (DWORD) GetPrivateProfileIntA(
 			Section.c_str(),wcs2mbcs(name).c_str(),(int)defVal,Filename.c_str()) ;
+	#else
+		return (DWORD) acalci(ReadStringA(wcs2mbcs(name),"").c_str(),(int)(defVal));
+	#endif
 	}
 	virtual wstring ReadString(const wstring name,const wstring defStr) const {
-		const size_t MAX_CHARS = 1024 ;
-		char buf[MAX_CHARS] ;
-		DWORD num = GetPrivateProfileStringA(
-			Section.c_str(),wcs2mbcs(name).c_str(),wcs2mbcs(defStr).c_str(),
-			buf,MAX_CHARS,Filename.c_str());
-		return num>0 ? mbcs2wcs(string(buf,num)) : defStr ;
+		return mbcs2wcs(ReadStringA(wcs2mbcs(name),wcs2mbcs(defStr)));
 	}
 };
-
 //===========================================================================
 // CBonFSHybrid
 //---------------------------------------------------------------------------
@@ -557,8 +563,8 @@ void CBonFSHybrid::ReadIniChannels (const std::string iniFilename, CHANNELS &ini
 		vector<string> item ;
 		split(item, string(p), '=') ;
 		if (item.size() == 2) {
-			int val = 0 ;
-			if (sscanf_s(item[1].c_str(), "%i", &val) == 1) {
+			int val = acalci(item[1].c_str(),-1) ;
+			if (val!=-1) {
 				size_t idx = size_t(val) >> 24;
 				if(idx < numChannel)
 					iniChannels[idx] = CHANNEL(L"AUX", val & 0x00ffffff, mbcs2wcs(item[0])) ;

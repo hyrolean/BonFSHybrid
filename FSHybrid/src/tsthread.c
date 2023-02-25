@@ -14,7 +14,7 @@
 #include "usbops.h"
 #include "osdepend.h"
 #include "tsbuff.h"
-#include "tsthread.h"                     
+#include "tsthread.h"
 
 #define STRICTLY_CHECK_EVENT_SIGNALS
 //#<OFF>#define STRICTLY_CHECK_EMPTY_FRAMES
@@ -30,6 +30,9 @@ DWORD TSTHREAD_SUBMIT_TIMEOUT = 50 ;
 int TSTHREAD_NUMIO = 24 ; //# number of I/O buffering
 int TSTHREAD_SUBMIT_IOLIMIT = 4 ; //# keeping number of I/O buffering at least
 
+//# power policy disable suspending
+BOOL USBPOWERPOLICY_AVOID_SUSPEND = FALSE ;
+
 //# pipe policy settings
 BOOL USBPIPEPOLICY_RAW_IO = TRUE ;
 BOOL USBPIPEPOLICY_AUTO_CLEAR_STALL = TRUE ;
@@ -39,6 +42,7 @@ BOOL USBPIPEPOLICY_IGNORE_SHORT_PACKETS = FALSE ;
 BOOL USBPIPEPOLICY_SHORT_PACKET_TERMINATE = FALSE ;
 DWORD USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT = 5000UL ;
 BOOL USBPIPEPOLICY_RESET_PIPE_ON_RESUME = FALSE ;
+
 
 struct TSIO_CONTEXT {
 #ifdef INCLUDE_ISOCH_XFER
@@ -769,7 +773,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 	ps->hTsStopped = CreateEvent( NULL, FALSE, FALSE, NULL );
 	InitializeCriticalSection(&ps->csTsExclusive) ;
 
-	//# USB endpoint
+	//# set USB pipe policy settings
 	WinUsb_ResetPipe( pusbep->fd, pusbep->endpoint & 0xFF );
 	#define SETUSBPIPEPOLICY_BOOL(name) do { UCHAR v=(DWORD)USBPIPEPOLICY_##name?1:0; \
 		WinUsb_SetPipePolicy( pusbep->fd, \
@@ -787,6 +791,14 @@ int tsthread_create( tsthread_ptr* const tptr,
 	SETUSBPIPEPOLICY_BOOL(RESET_PIPE_ON_RESUME);
 	#undef SETUSBPIPEPOLICY_BOOL
 	#undef SETUSBPIPEPOLICY_DWORD
+
+	//# set USB power policy settings
+	if(USBPOWERPOLICY_AVOID_SUSPEND) {
+		ULONG delay = INFINITE ;
+		UCHAR suspend = 0 ;
+		WinUsb_SetPowerPolicy(pusbep->fd,SUSPEND_DELAY,sizeof(delay),&delay);
+		WinUsb_SetPowerPolicy(pusbep->fd,AUTO_SUSPEND,sizeof(suspend),&suspend);
+	}
 
 	#ifdef _DEBUG
 

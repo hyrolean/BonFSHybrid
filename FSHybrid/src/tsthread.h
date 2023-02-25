@@ -13,6 +13,9 @@ extern DWORD TSTHREAD_SUBMIT_TIMEOUT;
 extern int TSTHREAD_NUMIO ; //# number of I/O buffering
 extern int TSTHREAD_SUBMIT_IOLIMIT ; //# keeping number of I/O buffering at least
 
+//# power policy disable suspending
+extern BOOL USBPOWERPOLICY_AVOID_SUSPEND ;
+
 //# pipe policy settings
 extern BOOL USBPIPEPOLICY_RAW_IO;
 extern BOOL USBPIPEPOLICY_AUTO_CLEAR_STALL;

@@ -46,7 +46,7 @@ string wcs2mbcs(wstring src, UINT code_page)
   if(mbLen>0) {
     BUFFER<char> mbcs(mbLen) ;
     WideCharToMultiByte(code_page, 0, src.c_str(), (int)src.length(), mbcs.data(), mbLen, NULL, NULL);
-	return string(mbcs.data(),mbLen);
+    return string(mbcs.data(),mbLen);
   }
   return string("");
 }
@@ -103,25 +103,39 @@ string file_prefix_of(string filename)
 // acalci
 //---------------------------------------------------------------------------
 
+#define ACALCI_CONST_MATCHCASE  false
+
     template<typename T>
     class integer_c_expression_const_table
     {
     protected:
-      typedef map<string,T> const_map_t;
+      class str_comp_f : public binary_function<string,string,bool> {
+        bool match_case;
+      public:
+        str_comp_f(bool match_case_) : match_case(match_case_) {}
+        str_comp_f(const str_comp_f &src) : match_case(src.match_case) {}
+        bool operator()(string lhs, string rhs) const {
+          if(match_case) lhs < rhs ;
+          return lower_case(lhs) < lower_case(rhs) ;
+        }
+      };
+      typedef map<string,T,str_comp_f> const_map_t;
       const_map_t const_map ;
-	  exclusive_object excl ;
+      exclusive_object excl ;
     public:
+      integer_c_expression_const_table(bool match_case)
+        : const_map(str_comp_f(match_case)) {}
       void clear() {
-	    exclusive_lock lock(&excl);
-		const_map.clear();
-	  }
+        exclusive_lock lock(&excl);
+        const_map.clear();
+      }
       void entry(const string name, const T val) {
-	    exclusive_lock lock(&excl);
-		const_map[name]=val;
-	  }
+        exclusive_lock lock(&excl);
+        const_map[name]=val;
+      }
       bool find(const string name, T &val) const {
         exclusive_lock lock(const_cast<exclusive_object*>(&excl));
-		const_map_t::const_iterator pos = const_map.find(name);
+        const_map_t::const_iterator pos = const_map.find(name);
         if(pos==const_map.end()) return false;
         val=pos->second ;
         return true;
@@ -465,12 +479,12 @@ string file_prefix_of(string filename)
       0[xX][0-9a-fA-F]+           Hexical digits
     ==============================================
 
-    Separator:: [SPACE][TAB(\t)][CR(\r)][LF(\n)]
+    Separators:: [SPACE][TAB(\t)][CR(\r)][LF(\n)]
 
 ********************************************************************/
 
-  static integer_c_expression_const_table<int> acalci_const_table ;
-  static integer_c_expression_const_table<__int64> acalci64_const_table ;
+  static integer_c_expression_const_table<int> acalci_const_table(ACALCI_CONST_MATCHCASE) ;
+  static integer_c_expression_const_table<__int64> acalci64_const_table(ACALCI_CONST_MATCHCASE) ;
 
 //-----
 int acalci(const char *s, int defVal, const char **endPtr, bool allowIndigest)

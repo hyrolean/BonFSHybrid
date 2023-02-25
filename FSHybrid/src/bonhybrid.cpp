@@ -446,7 +446,7 @@ bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
 	FifoFinalize();
 	if(!TSCACHING_LEGACY) {
 		if(m_eoCaching.is_valid()) {
-			size_t TSDATASIZE = ROUNDUP(usbep->xfer_size,0x1FFUL) ;   
+			size_t TSDATASIZE = ROUNDUP(usbep->xfer_size,0x1FFUL) ;
 			if(usbep->endpoint&0x100) {  // Isochronous
 				// アイソクロナス転送の場合は、強制的に整合化する
 				if(!TSCACHING_DEFRAGMENT) {
@@ -642,6 +642,7 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(TSTHREAD_SUBMIT_TIMEOUT);
 	LOADDW(TSTHREAD_NUMIO);
 	LOADDW(TSTHREAD_SUBMIT_IOLIMIT);
+	LOADDW(USBPOWERPOLICY_AVOID_SUSPEND);
 	LOADDW(USBPIPEPOLICY_RAW_IO);
 	LOADDW(USBPIPEPOLICY_AUTO_CLEAR_STALL);
 	LOADDW(USBPIPEPOLICY_ALLOW_PARTIAL_READS);

@@ -26,7 +26,7 @@
 #endif
 
 //# TS Buffer packets
-#define TS_BufPackets	64                           
+#define TS_BufPackets	64
 
 //# TS Buffer size
 #define TS_CalcBufSize(PacketSize)	(ROUNDUP(PacketSize,0x1FF)*TS_BufPackets)
@@ -42,9 +42,9 @@
 //# 2020-11-3
 //#   Moved the definition "ROUNDUP" from the source file "tsthread.c".
 //#   Removed the definition "TS_PollTimeout"
-//#     that is moved to as variable "TSTHREAD_POLL_TIMEOUT" on "tsthread.c".
+//#     that is moved to "TSTHREAD_POLL_TIMEOUT" as variable on "tsthread.c".
 //#   Removed the definition "TS_SubmitTimeout"
-//#     that is moved to as variable "TSTHREAD_SUBMIT_TIMEOUT" on "tsthread.c".
+//#     that is moved to "TSTHREAD_SUBMIT_TIMEOUT" as variable on "tsthread.c".
 //#   Removed the definition "TS_DeltaSize".
 //# 2020-10-31
 //#   Added the definition "TS_SubmitTimeout".

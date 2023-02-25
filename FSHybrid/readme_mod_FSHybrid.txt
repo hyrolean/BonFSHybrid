@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/11/14
+BonDriver_FSHybrid.dll MOD @ 2020/11/21
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -36,6 +36,7 @@ BonDriver_FSHybrid.dll MOD @ 2020/11/14
 
 2020/11/3 からの変更点
 
+  ・iniファイルにTS循環スレッド用マルチタスク設定項目 TSTHREAD_DUPLEX を追加
   ・iniファイルにUSBデバイスのアイドル時省電力機能を無効にするかどうかを決定す
     るための項目 USBPOWERPOLICY_AVOID_SUSPEND を追加
 

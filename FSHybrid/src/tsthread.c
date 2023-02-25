@@ -24,11 +24,14 @@
 
 
 //# URB thread settings
+BOOL TSTHREAD_DUPLEX = FALSE ;
 int TSTHREAD_PRIORITY = THREAD_PRIORITY_HIGHEST ;
 DWORD TSTHREAD_POLL_TIMEOUT = 25 ;
 DWORD TSTHREAD_SUBMIT_TIMEOUT = 50 ;
 int TSTHREAD_NUMIO = 24 ; //# number of I/O buffering
-int TSTHREAD_SUBMIT_IOLIMIT = 4 ; //# keeping number of I/O buffering at least
+#define MIN_IOLIMIT 4
+int TSTHREAD_SUBMIT_IOLIMIT = MIN_IOLIMIT ; //# keeping number of I/O buffering at least
+BOOL TSTHREAD_LOCK_ON_WINUSB = TRUE ;
 
 //# power policy disable suspending
 BOOL USBPOWERPOLICY_AVOID_SUSPEND = FALSE ;
@@ -54,7 +57,8 @@ struct TSIO_CONTEXT {
 };
 
 struct tsthread_param {
-	HANDLE hThread;    //# handle to thread data
+	HANDLE hThreads[2];    //# handles to thread data
+	unsigned char loop_flags ; //# ( 1: reap, 2: submit, 3: both ) <<2: init
 	unsigned char volatile  flags;
 	/* if 0x01 flagged, issue a new request.
 	   if 0x02 flagged, cancel requests and stop thread.
@@ -68,12 +72,19 @@ struct tsthread_param {
 	int buff_num;
 	int buff_push;
 	int buff_pop;
+	int io_num;
+	int io_limit;
 	int total_submit ;
-	struct TSIO_CONTEXT ioContext[TS_MaxNumIO];
-	HANDLE hTsEvents[TS_MaxNumIO*2-1] ;
+	struct TSIO_CONTEXT *ioContext ;
+	HANDLE *hTsEvents ;
 	HANDLE hTsAvailable,hTsRead,hTsRestart,hTsStopped ;
 
+	HANDLE hTsLoopIn, hTsReap, hTsSubmit ;
+
 	struct tsfifo_t* tsfifo ; //# ts-fifo caching object
+
+	int ri; //# the circular index based ioContext cursor for reaping
+	int si; //# the circular index based ioContext cursor for submitting
 
 	//# critical object
 	CRITICAL_SECTION csTsExclusive;
@@ -88,9 +99,10 @@ struct tsthread_param {
   }
 
   static void __inline lockWinUsb(struct tsthread_param* const ps,int lock) {
-	if(ps->pUSB->lockunlockFunc)
+	if(TSTHREAD_LOCK_ON_WINUSB&&ps->pUSB->lockunlockFunc)
 		 ps->pUSB->lockunlockFunc(ps->pUSB->dev,lock) ;
   }
+
 
 
 static void tsthread_purgeURB(const tsthread_ptr ptr)
@@ -107,7 +119,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 
 		if(ps->total_submit>0) {
 
-			for (i = 0;i < TSTHREAD_NUMIO;i++) {
+			for (i = 0;i < ps->io_num;i++) {
 				struct TSIO_CONTEXT* pContext = &ps->ioContext[i];
 				if(pContext->index>=0) {
 					if(ps->tsfifo&&ps->tsfifo->writeBackFinish)
@@ -122,6 +134,7 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 
 
 			ps->total_submit = 0;
+			ps->ri = ps->si ;
 
 		}
 	}
@@ -151,6 +164,8 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 	LeaveCriticalSection(&ps->csTsExclusive);
 }
 
+//# 2020-11-21
+//#   Supported the multi-tasking feature for the reaping and the submitting.
 //# 2020-10-5
 //#   Added the URB feature for the isochronous transfer mode.
 //# 2018-3-1
@@ -160,19 +175,22 @@ static void tsthread_purgeURB(const tsthread_ptr ptr)
 //# Fixed by 2018-2020 LVhJPic0JSk5LiQ1ITskKVk9UGBg
 static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 {
-
-	int ri=0; //# the circular index based ioContext cursor for reaping
-	int si=0; //# the circular index based ioContext cursor for submitting
 	BOOL bRet ;
 	DWORD dRet=0 ;
 
 	//# the pointer of a ts-fifo caching object
 	struct tsfifo_t *pTSFifo = ps->tsfifo ;
 
-	//# the write-through ts-fifo caching feature is existed or not
+	//# identify the loop model which is reaping, submitting or both.
+	const int loop_model = (ps->loop_flags >> 2) & 3 ;
+
+	//# whether the current task mode is duplex or not.
+	const BOOL duplex = (loop_model&3)==3 ? FALSE : TRUE ;
+
+	//# whether the write-through ts-fifo caching feature is existed or not
 	const BOOL hasWThrough = pTSFifo && pTSFifo->writeThrough ? TRUE : FALSE ;
 
-	//# the write-back ts-fifo caching feature is enabled or not
+	//# whether the write-back ts-fifo caching feature is enabled or not
 	const BOOL isWBack =
 #ifdef INCLUDE_ISOCH_XFER
 			(ps->pUSB->endpoint & 0x100) ? FALSE:
@@ -190,6 +208,9 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 #endif
 		1 ;
 
+	//# tell the loop is started
+	SetEvent(ps->hTsLoopIn);
+
 	//# check the contradiction of caching methods
 	assert( !isWBack != (ps->actual_length==NULL) ) ;
 	assert( !isWBack || (isWBack && !hasWThrough) ) ;
@@ -197,19 +218,8 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 	//# bulk loop
 	while(!(ps->flags&0x02)) {
 
-		if(HasSignal(ps->hTsRestart)) {
-			tsthread_purgeURB(ps) ;
-			ResetEvent(ps->hTsRestart) ;
-			continue;
-		}
-
-		if (!(ps->flags & 0x01)) {
-			SetEvent(ps->hTsStopped);
-			WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
-			continue ;
-		}
-
 #ifndef INCLUDE_ISOCH_XFER
+		//# shutdown ( isoch is not supported )
 		if (ps->pUSB->endpoint & 0x100) { //# Isochronous
 			if(ps->flags & 0x01) {
 				tsthread_stop(ps);
@@ -217,226 +227,272 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			}
 		}
 #endif
+		//# stop
+		if (!(ps->flags & 0x01)) {
+			EnterCriticalSection(&ps->csTsExclusive);
+			ps->loop_flags |= loop_model ;  //# loop deactivate 0 -> 1
+			if((ps->loop_flags&3)==3) {
+				SetEvent(ps->hTsStopped);
+				SetEvent(ps->hTsRestart); //# restart to reactivate loops
+			}
+			LeaveCriticalSection(&ps->csTsExclusive);
+			WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
+			continue ;
+		}
 
-		if(ps->total_submit>0) {
+		//# restart
+		if(HasSignal(ps->hTsRestart)) {
+			EnterCriticalSection(&ps->csTsExclusive);
+			ps->loop_flags |= loop_model ;  //# loop deactivate 0 -> 1
+			if((loop_model&2)&&(ps->loop_flags&3)==3) {
+				tsthread_purgeURB(ps) ;
+				ResetEvent(ps->hTsRestart) ;
+				SetEvent(ps->hTsAvailable) ;
+				LeaveCriticalSection(&ps->csTsExclusive);
+			}else {
+				LeaveCriticalSection(&ps->csTsExclusive);
+				WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
+			}
+			continue;
+		}else if(ps->loop_flags&loop_model) {
+			EnterCriticalSection(&ps->csTsExclusive);
+			ps->loop_flags &= ~loop_model ; //# loop activate 1 -> 0
+			LeaveCriticalSection(&ps->csTsExclusive);
+		}
 
-			//# poll
-			int next_wait_index=-1 ;
-			int max_wait_count = ps->total_submit<MAXIMUM_WAIT_OBJECTS ? ps->total_submit : MAXIMUM_WAIT_OBJECTS ;
-			dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
-			if (isCritical(ps)) continue;
-			if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
-				int end_index=(ri+ps->total_submit)%TSTHREAD_NUMIO ;
-				next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ri)%TSTHREAD_NUMIO ;
-#ifdef STRICTLY_CHECK_EVENT_SIGNALS
-				while(next_wait_index!=end_index) {
-					if(!HasSignal(ps->hTsEvents[next_wait_index]))
-						break ;
-					if (++next_wait_index >= TSTHREAD_NUMIO)
-						next_wait_index ^= next_wait_index ;
-				}
-#endif
-			}else if(WAIT_TIMEOUT!=dRet) {
-				dRet = GetLastError();
-				warn_info(dRet,"poll failed");
-				break;
+		//# reaping loop model
+		if( loop_model&1 ) {
+
+			if(duplex && ps->total_submit<(ps->flags&0x10?ps->io_limit:MIN_IOLIMIT)) {
+				HANDLE events[2];
+				events[0]=ps->hTsSubmit;
+				events[1]=ps->hTsRestart ;
+				//# wait for submitting buffer...
+				WaitForMultipleObjects(2, events , FALSE, TSTHREAD_SUBMIT_TIMEOUT );
+				if(ps->total_submit<ps->io_limit)
+					continue ; //# less than io_limit, redo...
 			}
 
-			//# reap
-			if(next_wait_index>=0) do {
+			if(HasSignal(ps->hTsRestart)) continue ;
 
-				struct TSIO_CONTEXT* pContext = &ps->ioContext[ri];
-				if(pContext->index>=0) {
+			if(ps->total_submit>0) {
 
-					DWORD bytesRead=pContext->bytesRead ;
+				//# poll
+				int total_submit = ps->total_submit ;
+				int next_wait_index=-1 ;
+				int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
+				dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
+				if (isCritical(ps)) continue;
+				if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
+					int end_index=(ps->ri+total_submit)%ps->io_num ;
+					next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
+#ifdef STRICTLY_CHECK_EVENT_SIGNALS
+					while(next_wait_index!=end_index) {
+						if(!HasSignal(ps->hTsEvents[next_wait_index]))
+							break ;
+						if (++next_wait_index >= ps->io_num)
+							next_wait_index ^= next_wait_index ;
+					}
+#endif
+				}else if(WAIT_TIMEOUT!=dRet) {
+					dRet = GetLastError();
+					warn_info(dRet,"poll failed");
+					break;
+				}
 
-					if (isCritical(ps)) break;
-					//if(!HasSignal(ps->hTsEvents[ri])) break ;
-					if(bytesRead>0) {
-						bRet = TRUE;
-						dRet = 0;
-					}else {
-						lockWinUsb(ps,1) ;
-						if (isCritical(ps)) {
-							bRet=FALSE ;
-							dRet=ERROR_OPERATION_ABORTED ;
+				//# reap
+				if(next_wait_index>=0) do {
+
+					struct TSIO_CONTEXT* pContext = &ps->ioContext[ps->ri];
+					if(pContext->index>=0) {
+
+						DWORD bytesRead=pContext->bytesRead ;
+
+						if (isCritical(ps)) break;
+						//if(!HasSignal(ps->hTsEvents[ps->ri])) break ;
+						if(bytesRead>0) {
+							bRet = TRUE;
+							dRet = 0;
 						}else {
-							bRet = WinUsb_GetOverlappedResult(
-								ps->pUSB->fd, &(pContext->ol), &bytesRead, FALSE);
-							dRet = GetLastError();
+							lockWinUsb(ps,1) ;
+							if (isCritical(ps)) {
+								bRet=FALSE ;
+								dRet=ERROR_OPERATION_ABORTED ;
+							}else {
+								bRet = WinUsb_GetOverlappedResult(
+									ps->pUSB->fd, &(pContext->ol), &bytesRead, FALSE);
+								dRet = GetLastError();
+							}
+							lockWinUsb(ps,0) ;
 						}
-						lockWinUsb(ps,0) ;
-					}
-					if (ps->buff_unitSize < bytesRead) {
-						DBGOUT("reap: size over (size=%d)\n",bytesRead) ;
-						warn_info(bytesRead, "reapURB overflow");
-						bytesRead = ps->buff_unitSize;
-					}
-					if(bRet) {
+						if (ps->buff_unitSize < bytesRead) {
+							DBGOUT("reap: size over (size=%d)\n",bytesRead) ;
+							warn_info(bytesRead, "reapURB overflow");
+							bytesRead = ps->buff_unitSize;
+						}
+						if(bRet) {
 #ifndef INCLUDE_ISOCH_XFER
-						if (ps->pUSB->endpoint & 0x100)
-							bytesRead = 0;
+							if (ps->pUSB->endpoint & 0x100)
+								bytesRead = 0;
 #endif
 #ifdef TS_IgnoreShortPacket
-						if (ps->xfer_size>bytesRead) {
-							//if(bytesRead>0)
-								DBGOUT("reap: short packet (size=%d)\n",bytesRead) ;
-							bytesRead=0;
-						}
-#endif
-					}else {
-						DBGOUT("reap: error (code=%d, size=%d)\n",dRet,bytesRead) ;
-						if(ERROR_IO_INCOMPLETE == dRet) { //# incomplete
-							break;  //# looking forward to the next time...
-						}
-						#if 1
-						if(ERROR_SEM_TIMEOUT == dRet) { //# timeout
-							break;  //# looking forward to the next time...
-						}
-						#endif
-						//# failed
-						bytesRead = 0;
-						//ps->flags &= ~0x10;
-						warn_msg(dRet, "reapURB%u failed", ri);
-					}
-					EnterCriticalSection(&ps->csTsExclusive) ;
-					if(pContext->index>=0) {
-						if (ps->pUSB->endpoint & 0x100) {
-#ifdef INCLUDE_ISOCH_XFER
-							if(hasWThrough && pContext->index==ps->buff_pop) {
-
-								//# write-through caching ( context & buff_pop indices sync )
-								char *p = &ps->buffer[pContext->index*ps->buff_unitSize] ;
-								const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[0];
-								int n, sz, amount = 0 ;
-								if(!bRet)
-									warn_msg(dRet, "reapURB%u(%u)",ri, frames);
-								else for(n=frames ; n-- ; pDesc++) {
-									if(pDesc->Status) {
-										sz = 0;
-										warn_msg(dRet, "reapURB%u.%u", ri, frames-1-n);
-									}else
-										sz = pDesc->Length ;
-									if(n&&sz==ps->buff_unitSize)
-										amount+=sz ;
-									else {
-										if(amount+sz>0)
-											pTSFifo->writeThrough(p, amount+sz, pTSFifo->arg) ;
-										p+=amount+ps->buff_unitSize, amount=0 ;
-									}
-								}
-								if(ps->buff_pop + frames >= ps->buff_num)
-									ps->buff_pop = 0;
-								else
-									ps->buff_pop += frames ;
-								ps->actual_length[pContext->index]=-1 ;
-
-#ifdef STRICTLY_CHECK_EMPTY_FRAMES
-								if(frames>1) {
-#ifdef STRICTLY_CHECK_EMPTY_FRAMES_ALL
-									//# reset all frames
-									__stosd(&ps->actual_length[pContext->index+1],-1,frames-1);
-#else
-									//# erase a gatekeeper frame
-									ps->actual_length[pContext->index+frames-1]=-1 ;
-#endif
-								}
-#endif
-							}else {
-#if defined(_WIN32) && !defined(_WIN64)
-
-								int stride = (char*) &pContext->isochFrameDesc[1]
-									- (char*) &pContext->isochFrameDesc[0] ;
-								void* sp_ = &pContext->isochFrameDesc[0].Length ;
-								void* dp_ = &ps->actual_length[pContext->index] ;
-								int dx_ = (char*) &pContext->isochFrameDesc[0].Status
-									- (char*) &pContext->isochFrameDesc[0].Length ;
-								int errors = 0 ;
-								_asm {
-									mov ecx, frames
-									mov edi, dp_
-									cld
-									cmp bRet, 0
-									je lb3
-									xor ebx, ebx
-									mov esi, sp_
-									mov eax, stride
-									mov edx, dx_
-								lb1:
-									cmp dword ptr [esi+edx], 0
-									jne lb2
-									movsd
-									lea esi, [esi+eax-4]
-									dec ecx
-									jnz lb1
-									jmp lb4
-								lb2:
-									mov dword ptr [edi], 0
-									lea edi, [edi+4]
-									lea esi, [esi+eax]
-									inc ebx
-									dec ecx
-									jnz lb1
-									jmp lb4
-								lb3:
-									mov ebx, ecx
-									xor eax, eax
-									rep stosd
-								lb4:
-									mov errors, ebx
-								}
-								if(errors>0)
-									warn_msg(dRet, "reapURB%u(%u)",ri, errors);
-#else
-								register int n,*pLen = &ps->actual_length[pContext->index];
-								register const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[frames-1];
-								if(!bRet) {
-									__stosd(pLen,0,frames);
-									warn_msg(dRet, "reapURB%u(%u)",ri, frames);
-								}
-								else for (n = frames ; n ; n--, pDesc--) {
-									if (pDesc->Status) {
-										pLen[n-1] =  0;
-										warn_msg(dRet, "reapURB%u.%u", ri, n-1);
-										continue;
-									}
-									pLen[n-1] = pDesc->Length ;
-								}
-#endif
+							if (ps->xfer_size>bytesRead) {
+								//if(bytesRead>0)
+									DBGOUT("reap: short packet (size=%d)\n",bytesRead) ;
+								bytesRead=0;
 							}
-							if(bRet) SetEvent(ps->hTsAvailable) ;
 #endif
 						}else {
-							if (isWBack)
-								pTSFifo->writeBackFinish(ri, bytesRead, pTSFifo->arg);
-							else
-								ps->actual_length[pContext->index] = bytesRead;
-							if(bytesRead) SetEvent(ps->hTsAvailable) ;
+							DBGOUT("reap: error (code=%d, size=%d)\n",dRet,bytesRead) ;
+							if(ERROR_IO_INCOMPLETE == dRet) { //# incomplete
+								break;  //# looking forward to the next time...
+							}
+							#if 1
+							if(ERROR_SEM_TIMEOUT == dRet) { //# timeout
+								break;  //# looking forward to the next time...
+							}
+							#endif
+							//# failed
+							bytesRead = 0;
+							//ps->flags &= ~0x10;
+							warn_msg(dRet, "reapURB%u failed", ps->ri);
 						}
-						ResetEvent(ps->hTsEvents[ri]);
-						pContext->index=-1 ;
-						ps->total_submit-- ;
+						if(pContext->index>=0) {
+							if (ps->pUSB->endpoint & 0x100) {
+#ifdef INCLUDE_ISOCH_XFER
+								EnterCriticalSection(&ps->csTsExclusive) ;
+								if(hasWThrough && pContext->index==ps->buff_pop) {
+
+									//# write-through caching ( context & buff_pop indices sync )
+									char *p = &ps->buffer[pContext->index*ps->buff_unitSize] ;
+									const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[0];
+									int n, sz, amount = 0 ;
+									if(!bRet)
+										warn_msg(dRet, "reapURB%u(%u)",ps->ri, frames);
+									else for(n=frames ; n-- ; pDesc++) {
+										if(pDesc->Status) {
+											sz = 0;
+											warn_msg(dRet, "reapURB%u.%u", ps->ri, frames-1-n);
+										}else
+											sz = pDesc->Length ;
+										if(n&&sz==ps->buff_unitSize)
+											amount+=sz ;
+										else {
+											if(amount+sz>0)
+												pTSFifo->writeThrough(p, amount+sz, pTSFifo->arg) ;
+											p+=amount+ps->buff_unitSize, amount=0 ;
+										}
+									}
+									if(ps->buff_pop + frames >= ps->buff_num)
+										ps->buff_pop = 0;
+									else
+										ps->buff_pop += frames ;
+									ps->actual_length[pContext->index]=-1 ;
+
+#ifdef STRICTLY_CHECK_EMPTY_FRAMES
+									if(frames>1) {
+#ifdef STRICTLY_CHECK_EMPTY_FRAMES_ALL
+										//# reset all frames
+										__stosd(&ps->actual_length[pContext->index+1],-1,frames-1);
+#else
+										//# erase a gatekeeper frame
+										ps->actual_length[pContext->index+frames-1]=-1 ;
+#endif
+									}
+#endif
+									LeaveCriticalSection(&ps->csTsExclusive) ;
+								}else {
+									LeaveCriticalSection(&ps->csTsExclusive) ;
+#if defined(_WIN32) && !defined(_WIN64)
+
+									int stride = (char*) &pContext->isochFrameDesc[1]
+										- (char*) &pContext->isochFrameDesc[0] ;
+									void* sp_ = &pContext->isochFrameDesc[0].Length ;
+									void* dp_ = &ps->actual_length[pContext->index] ;
+									int dx_ = (char*) &pContext->isochFrameDesc[0].Status
+										- (char*) &pContext->isochFrameDesc[0].Length ;
+									int errors = 0 ;
+									_asm {
+										mov ecx, frames
+										mov edi, dp_
+										cld
+										cmp bRet, 0
+										je lb3
+										xor ebx, ebx
+										mov esi, sp_
+										mov eax, stride
+										mov edx, dx_
+									lb1:
+										cmp dword ptr [esi+edx], 0
+										jne lb2
+										movsd
+										lea esi, [esi+eax-4]
+										dec ecx
+										jnz lb1
+										jmp lb4
+									lb2:
+										mov dword ptr [edi], 0
+										lea edi, [edi+4]
+										lea esi, [esi+eax]
+										inc ebx
+										dec ecx
+										jnz lb1
+										jmp lb4
+									lb3:
+										mov ebx, ecx
+										xor eax, eax
+										rep stosd
+									lb4:
+										mov errors, ebx
+									}
+									if(errors>0)
+										warn_msg(dRet, "reapURB%u(%u)",ps->ri, errors);
+#else
+									register int n,*pLen = &ps->actual_length[pContext->index];
+									register const USBD_ISO_PACKET_DESCRIPTOR *pDesc=&pContext->isochFrameDesc[frames-1];
+									if(!bRet) {
+										__stosd(pLen,0,frames);
+										warn_msg(dRet, "reapURB%u(%u)",ps->ri, frames);
+									}
+									else for (n = frames ; n ; n--, pDesc--) {
+										if (pDesc->Status) {
+											pLen[n-1] =  0;
+											warn_msg(dRet, "reapURB%u.%u", ps->ri, n-1);
+											continue;
+										}
+										pLen[n-1] = pDesc->Length ;
+									}
+#endif
+								}
+								if(bRet) SetEvent(ps->hTsAvailable) ;
+#endif
+							}else {
+								if (isWBack)
+									pTSFifo->writeBackFinish(ps->ri, bytesRead, pTSFifo->arg);
+								else
+									ps->actual_length[pContext->index] = bytesRead;
+								if(bytesRead) SetEvent(ps->hTsAvailable) ;
+							}
+							ResetEvent(ps->hTsEvents[ps->ri]);
+							pContext->index=-1 ;
+							if(duplex) EnterCriticalSection(&ps->csTsExclusive) ;
+							ps->total_submit-- ;
+							if(duplex) LeaveCriticalSection(&ps->csTsExclusive) ;
+							total_submit-- ;
+							SetEvent(ps->hTsReap);
+						}
 					}
-					LeaveCriticalSection(&ps->csTsExclusive) ;
-				}
-				if(++ri>=TSTHREAD_NUMIO) ri^=ri ;
-				if(ps->total_submit<=0) break ;
+					if(++ps->ri>=ps->io_num) ps->ri^=ps->ri ;
+					if(total_submit<=0) break ;
 
-			}while(ri!=next_wait_index);
+				}while(ps->ri!=next_wait_index);
 
+			}
 		}
 
-		if(!ps->total_submit) {
+		//# write-through caching ( async )
+		if( (loop_model&1) && hasWThrough ) {
 
-			//# I/O stall
-			ri = si ;
-			DBGOUT("io stall\n");
-
-		}
-
-		if(hasWThrough) {
-
-			//# write-through caching ( async )
 			char *p = NULL, *r ;
 			int sz, amount = 0 ;
 			do {
@@ -456,17 +512,28 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 		}
 
-		if (HasSignal(ps->hTsRestart)) continue;
+        //# submitting loop model
+		if( loop_model&2 ) {
 
-		if(ps->total_submit<TSTHREAD_NUMIO) {
+			if( duplex && ps->total_submit>=(ps->flags&0x10?ps->io_num:MIN_IOLIMIT) ) {
+				HANDLE events[2];
+				events[0]=ps->hTsReap;
+				events[1]=ps->hTsRestart ;
+				//# wait for reaping buffer...
+				WaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT );
+				if(ps->total_submit>=ps->io_num)
+					continue ; //# still full, redo...
+			}
+
+			if (HasSignal(ps->hTsRestart)) continue;
 
 			//# submit
-			if(ps->flags & 0x01) {
+			if( ps->total_submit<ps->io_num && (ps->flags & 0x01) ) {
 				DWORD tick = GetTickCount() ;
-				int cont = ps->flags & 0x10 ;
+				int fulfill = duplex || !(ps->flags&0x10) ;
 				void *buffer;
 				DWORD lnTransfered;
-				int num_empties=0,max_empties=TSTHREAD_NUMIO;
+				int num_empties=0,max_empties=ps->io_num;
 				int last_state=0;
 				dRet = 0;bRet = FALSE;
 				//# calculate the real maximum number of empties on the buffer
@@ -488,23 +555,20 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					max_empties -= POPDELTA; //# subtract deadzone
 				}
 				//# total I/O submittable empties
-				num_empties=TSTHREAD_NUMIO-ps->total_submit;
+				num_empties=ps->io_num-ps->total_submit;
 				num_empties*=frames;
-				//start=si ;
+				//start=ps->si ;
 				if(num_empties>max_empties) {
 					num_empties = max_empties ;
 					#if 1
 					if(num_empties<=0&&ps->total_submit<=0) {
 						//# in the dead zone
 						if(!isWBack&&!hasWThrough&&last_state>=0) {
-							DWORD wait = TSTHREAD_SUBMIT_TIMEOUT ;
 							HANDLE events[2];
 							events[0]=ps->hTsRead;
 							events[1]=ps->hTsRestart ;
-							if(TSTHREAD_POLL_TIMEOUT<wait)
-								wait = TSTHREAD_POLL_TIMEOUT ;
 							//# wait for reading buffer...
-							dRet=WaitForMultipleObjects(2, events , FALSE, wait );
+							dRet=WaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT );
 							if(dRet==WAIT_TIMEOUT)
 							  DBGOUT("read: wait timeout\n") ;
 							else if(dRet==WAIT_OBJECT_0)
@@ -515,11 +579,12 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				}
 				//# submit to empties
 				while (num_empties>=frames) {
-					struct TSIO_CONTEXT* pContext = &ps->ioContext[si];
+					BOOL submitted = FALSE ;
+					struct TSIO_CONTEXT* pContext = &ps->ioContext[ps->si];
 					if (isCritical(ps)) break;
-					if(ps->total_submit>=TSTHREAD_NUMIO) break;
+					if(ps->total_submit>=ps->io_num) break;
 					if (pContext->index>=0) break ;
-					//if (HasSignal(ps->hTsEvents[ri])) break;
+					//if (HasSignal(ps->hTsEvents[ps->ri])) break;
 #ifndef INCLUDE_ISOCH_XFER
 					if (ps->pUSB->endpoint & 0x100) { //# Isochronous
 						//tsthread_stop(ps);
@@ -527,7 +592,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					}
 #endif
 					if(isWBack) {
-						buffer = pTSFifo->writeBackBegin(si, ps->buff_unitSize, pTSFifo->arg) ;
+						buffer = pTSFifo->writeBackBegin(ps->si, ps->buff_unitSize, pTSFifo->arg) ;
 						if(!buffer) break ; //# buffer overflow
 					}
 #ifdef STRICTLY_CHECK_EMPTY_FRAMES
@@ -557,16 +622,15 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						if(n) break ; //# buffer busy
 					}
 #endif
-					EnterCriticalSection(&ps->csTsExclusive) ;
 					if(!isWBack) {
 						buffer = ps->buffer + ps->buff_push * ps->buff_unitSize ;
 						last_state = ps->actual_length[ps->buff_push] ;
 						ps->actual_length[ps->buff_push] = -2;
 					}
-					pContext->index = isWBack ? si : ps->buff_push;
+					pContext->index = isWBack ? ps->si : ps->buff_push;
 					pContext->bytesRead = 0 ;
 					ZeroMemory(&pContext->ol,sizeof(OVERLAPPED));
-					pContext->ol.hEvent = ps->hTsEvents[si];
+					pContext->ol.hEvent = ps->hTsEvents[ps->si];
 					lnTransfered = 0;
 					ResetEvent(pContext->ol.hEvent);
 					lockWinUsb(ps,1) ;
@@ -584,17 +648,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								frames, pContext->isochFrameDesc,
 								&(pContext->ol));
 							dRet = GetLastError();
-							if (!bRet && ERROR_INVALID_PARAMETER == dRet)
-								ps->flags &= ~0x10;
-							else if(!(ps->flags & 0x10))
-								ps->flags |= 0x10;
 #endif
 						}else {
 							bRet = WinUsb_ReadPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF,
 								buffer, ps->buff_unitSize, &lnTransfered, &(pContext->ol));
 							dRet = GetLastError();
-							if(!(ps->flags & 0x10))
-								ps->flags |= 0x10;
 						}
 					}
 					lockWinUsb(ps,0) ;
@@ -603,11 +661,12 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						DBGOUT("submit: error (code=%d, size=%d)\n",dRet,lnTransfered) ;
 						warn_info(dRet, "submitURB failed");
 						if(isWBack)
-							pTSFifo->writeBackFinish(si,0,pTSFifo->arg);
+							pTSFifo->writeBackFinish(ps->si,0,pTSFifo->arg);
 						else
 							ps->actual_length[ps->buff_push] = last_state;
-						ResetEvent(ps->hTsEvents[si]);
+						ResetEvent(ps->hTsEvents[ps->si]);
 						pContext->index = -1;
+						if(ps->flags&0x10) ps->flags &= ~0x10; //# not cont
 					}else {
 						//# submitting succeeded
 						if(!isWBack) {
@@ -630,22 +689,27 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 						if(bRet) {
 							DBGOUT("submit: success (size=%d)\n",lnTransfered) ;
 							pContext->bytesRead = lnTransfered ;
-							SetEvent(ps->hTsEvents[si]) ;
+							SetEvent(ps->hTsEvents[ps->si]) ;
 						}else {
 							if(lnTransfered>0)
 								DBGOUT("submit: pending (size=%d)\n",lnTransfered) ;
 						}
 						dRet = 0;
-						if(++si >= TSTHREAD_NUMIO) si^=si;
+						if(++ps->si >= ps->io_num) ps->si^=ps->si;
+						if(duplex) EnterCriticalSection(&ps->csTsExclusive) ;
 						++ps->total_submit;
+						if(duplex) LeaveCriticalSection(&ps->csTsExclusive) ;
+						SetEvent(ps->hTsSubmit) ;
+						submitted=TRUE;
+						if(!(ps->flags&0x10)) ps->flags |= 0x10; //# cont
 					}
-					LeaveCriticalSection(&ps->csTsExclusive) ;
 					//# check submitting failed or not
-					if(/*dRet||*/pContext->index<0) break ;
-					if (cont && GetTickCount()-tick>=TSTHREAD_SUBMIT_TIMEOUT
-						&& ps->total_submit>=TSTHREAD_SUBMIT_IOLIMIT )
-						break; //# submitting timeout
+					if(!submitted) break ;
 					num_empties-=frames;
+					if(fulfill) continue;
+					if (GetTickCount()-tick>=TSTHREAD_SUBMIT_TIMEOUT
+						&& ps->total_submit>=ps->io_limit )
+						break; //# submitting timeout
 				}
 				//if(dRet) break ;
 			}
@@ -680,13 +744,16 @@ int tsthread_create( tsthread_ptr* const tptr,
 				   )
 {
 
+	int result = 0 ;
 	struct tsthread_param* ps;
 	DWORD dwRet; int i;
 
-	if (TSTHREAD_NUMIO < TSTHREAD_SUBMIT_IOLIMIT)
-		TSTHREAD_NUMIO = TSTHREAD_SUBMIT_IOLIMIT;
-	else if (TSTHREAD_NUMIO > TS_MaxNumIO)
-		TSTHREAD_NUMIO = TS_MaxNumIO;
+	unsigned io_num = TSTHREAD_NUMIO ;
+	unsigned io_limit = TSTHREAD_SUBMIT_IOLIMIT ;
+	if(io_limit<MIN_IOLIMIT) io_limit=MIN_IOLIMIT ;
+	if (io_num < io_limit) io_num = io_limit;
+	else if (io_num > TS_MaxNumIO) io_num = TS_MaxNumIO;
+	if(io_limit > io_num) io_limit = io_num ;
 
 	{ //#
 		const BOOL tsfifo_exists = ptsfifo ? TRUE : FALSE ;
@@ -707,9 +774,11 @@ int tsthread_create( tsthread_ptr* const tptr,
 		const unsigned buffer_size = wback_exists ? 0 : ROUNDUP( buffSize, 0xF );
 		const unsigned actlen_size = wback_exists ? 0 : sizeof( int ) * unitNum;
 		const unsigned tsfifo_size = tsfifo_exists ? ROUNDUP( sizeof( struct tsfifo_t ), 0xF) : 0;
+		const unsigned iocontext_size = ROUNDUP( io_num * sizeof(struct TSIO_CONTEXT), 0xF);
+		const unsigned htsevents_size = ROUNDUP(  (io_num * 2 - 1) * sizeof(HANDLE), 0xF);
 		char *ptr, *buffer_ptr;
 		struct tsfifo_t *tsfifo_ptr;
-		unsigned totalSize = param_size + actlen_size + buffer_size + tsfifo_size ;
+		unsigned totalSize =  param_size + actlen_size + buffer_size + tsfifo_size + iocontext_size + htsevents_size ;
 		ptr = uHeapAlloc( totalSize );
 		if ( NULL == ptr ) {
 			dwRet = GetLastError();
@@ -725,10 +794,16 @@ int tsthread_create( tsthread_ptr* const tptr,
 		ptr += actlen_size;
 		tsfifo_ptr = ( struct tsfifo_t * ) ptr;
 		ptr += tsfifo_size;
+		ps->ioContext = ( struct TSIO_CONTEXT * ) ptr;
+		ptr += iocontext_size;
+		ps->hTsEvents = (HANDLE*) ptr ;
+		ptr += htsevents_size;
 		ps->xfer_size= xferSize;
 		ps->buff_unitSize = unitSize;
 		ps->buff_num = unitNum;
 		ps->buff_size = buffSize;
+		ps->io_num = io_num ;
+		ps->io_limit = io_limit ;
 		assert(ptr-buffer_ptr==totalSize) ;
 		if ( actlen_size ) {
 			//# reset all values to empty
@@ -746,6 +821,8 @@ int tsthread_create( tsthread_ptr* const tptr,
 	ps->buff_push = 0;
 	ps->buff_pop = 0;
 	ps->total_submit = 0;
+	ps->ri = 0;
+	ps->si = 0;
 #ifdef INCLUDE_ISOCH_XFER
 	ps->hIsochBuffer = NULL;
 	if (pusbep->endpoint & 0x100)
@@ -756,7 +833,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 	}
 #endif
 
-	for ( i = 0; i < TSTHREAD_NUMIO; i++ ) {
+	for ( i = 0; i < ps->io_num; i++ ) {
 		ps->ioContext[ i ].index = -1;    //# mark it unused
 		ps->hTsEvents[ i ] = CreateEvent( NULL, TRUE, FALSE, NULL );
 		ZeroMemory( &ps->ioContext[ i ].ol, sizeof( OVERLAPPED ) );
@@ -764,13 +841,16 @@ int tsthread_create( tsthread_ptr* const tptr,
 	}
 
 	//# it arranges for event handles to look like circular buffer
-	for ( i = 0; i < TSTHREAD_NUMIO - 1; i++ ) {
-		ps->hTsEvents[ i + TSTHREAD_NUMIO ] = ps->hTsEvents[ i ];
+	for ( i = 0; i < ps->io_num - 1; i++ ) {
+		ps->hTsEvents[ i + ps->io_num ] = ps->hTsEvents[ i ];
 	}
 	ps->hTsAvailable = CreateEvent( NULL, FALSE, FALSE, NULL );
 	ps->hTsRead = CreateEvent( NULL, FALSE, FALSE, NULL );
 	ps->hTsRestart = CreateEvent( NULL, TRUE, FALSE, NULL );
 	ps->hTsStopped = CreateEvent( NULL, FALSE, FALSE, NULL );
+	ps->hTsLoopIn = CreateEvent( NULL, TRUE, FALSE, NULL ) ;
+	ps->hTsReap = CreateEvent( NULL, FALSE, FALSE, NULL );
+	ps->hTsSubmit = CreateEvent( NULL, FALSE, FALSE, NULL );
 	InitializeCriticalSection(&ps->csTsExclusive) ;
 
 	//# set USB pipe policy settings
@@ -807,17 +887,25 @@ int tsthread_create( tsthread_ptr* const tptr,
 	dmsg( "MAX_TRANSFER_SIZE=%u", i );
 	#endif
 
-	ps->hThread = ( HANDLE ) _beginthreadex( NULL, 0, tsthread, ps, 0, NULL );
-	if ( INVALID_HANDLE_VALUE == ps->hThread ) {
-		warn_info( errno, "tsthread_create failed" );
-		uHeapFree( ps->buffer );
-		return -1;
-	} else {
-		SetThreadPriority( ps->hThread, TSTHREAD_PRIORITY );
+	SetEvent(ps->hTsRestart);
+
+	ps->hThreads[0]=ps->hThreads[1]=INVALID_HANDLE_VALUE;
+    for(i=0;i<(TSTHREAD_DUPLEX?2:1);i++) {
+		ps->loop_flags = TSTHREAD_DUPLEX ? 1<<(2+i)/*duplex*/: 3<<2/*simplex*/;
+		ResetEvent(ps->hTsLoopIn);
+		ps->hThreads[i] = ( HANDLE ) _beginthreadex( NULL, 0, tsthread, ps, 0, NULL );
+		if ( INVALID_HANDLE_VALUE == ps->hThreads[i] ) {
+			warn_info( errno, "tsthread_create(%d) failed",i );
+			result = -1 ;
+		}else {
+			SetThreadPriority( ps->hThreads[i], TSTHREAD_PRIORITY );
+			if(TSTHREAD_DUPLEX) WaitForSingleObject(ps->hTsLoopIn,INFINITE);
+		}
 	}
+    
 	*tptr = ps;
 
-	return 0;
+	return result ;
 }
 
 void tsthread_destroy(const tsthread_ptr ptr)
@@ -829,17 +917,27 @@ void tsthread_destroy(const tsthread_ptr ptr)
 	p->flags |= 0x02;    //# canceled = T
 	SetEvent(p->hTsRead);
 	SetEvent(p->hTsAvailable);
-	if (WaitForSingleObject(p->hThread, 1000) != WAIT_OBJECT_0) {
-		warn_msg(GetLastError(), "tsthread_destroy timeout");
-		TerminateThread(p->hThread, 0);
+	SetEvent(p->hTsReap);
+	SetEvent(p->hTsSubmit);
+	for(i=0;i<2;i++) {
+		if(p->hThreads[i]!=INVALID_HANDLE_VALUE) {
+			if (WaitForSingleObject(p->hThreads[i],
+					USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT) != WAIT_OBJECT_0) {
+				warn_msg(GetLastError(), "tsthread_destroy timeout(%d)",i);
+				TerminateThread(p->hThreads[i], 0);
+			}
+			CloseHandle(p->hThreads[i]);
+		}
 	}
-	for (i = 0; i < TSTHREAD_NUMIO; i++)
+	for (i = 0; i < p->io_num; i++)
 		CloseHandle(p->hTsEvents[i]);
 	CloseHandle(p->hTsAvailable);
 	CloseHandle(p->hTsRead);
 	CloseHandle(p->hTsRestart);
-	CloseHandle(p->hThread);
 	CloseHandle(p->hTsStopped);
+	CloseHandle(p->hTsLoopIn);
+	CloseHandle(p->hTsReap);
+	CloseHandle(p->hTsSubmit);
 #ifdef INCLUDE_ISOCH_XFER
 	if(p->hIsochBuffer) {
 		WinUsb_UnregisterIsochBuffer( p->hIsochBuffer );
@@ -876,6 +974,8 @@ void tsthread_start(const tsthread_ptr ptr)
 		}
 	}
 #endif
+
+	SetEvent(ps->hTsRestart);
 
 	ps->flags |= 0x01;    //# continue = T
 	if (ps->pUSB->startstopFunc)
@@ -923,7 +1023,8 @@ void tsthread_stop(const tsthread_ptr ptr)
 int tsthread_read(const tsthread_ptr tptr, void ** const ptr)
 {
 	struct tsthread_param* const ps = tptr;
-	int i, j;
+	char *p ;
+	int i, j ;
 
 	if(!ptr) {
 		//# purge
@@ -934,18 +1035,23 @@ int tsthread_read(const tsthread_ptr tptr, void ** const ptr)
 	if(!ps->actual_length)
 		return 0 ;
 
+	p = NULL;
+
 	EnterCriticalSection(&ps->csTsExclusive) ;
+
 	i = tsthread_readable(tptr);
-	if(0 < i) {
+	if(i>0) {
 		j = ps->buff_pop;
+		p = ps->buffer + (j * ps->buff_unitSize);
 		ps->actual_length[ps->buff_pop] = -1;
-		*ptr = ps->buffer + (j * ps->buff_unitSize);
-		ps->buff_pop = (ps->buff_num - 1 > j) ? j + 1 : 0;
-		SetEvent(ps->hTsRead) ;
+		ps->buff_pop = (ps->buff_num > j+1) ? j+1 : 0;
 	}
+
 	LeaveCriticalSection(&ps->csTsExclusive) ;
 
-	return i<0 ? 0:i ;
+	*ptr=p ;
+	if(p) SetEvent(ps->hTsRead) ;
+	return i<0?0:i ;
 }
 
 int tsthread_readable(const tsthread_ptr tptr)
@@ -983,9 +1089,15 @@ int tsthread_wait(const tsthread_ptr tptr, const int timeout)
 	struct tsthread_param* const ps = tptr;
 	DWORD dRet ;
 	if(tsthread_readable(tptr)>0) return 1 ; //# already available
-	dRet = WaitForSingleObject( ps->hTsAvailable , timeout );
-	if(WAIT_OBJECT_0 == dRet)  return 1;
-	else if(WAIT_TIMEOUT == dRet)  return 0;
+	{
+		HANDLE events[2];
+		events[0]=ps->hTsRestart ;
+		events[1]=ps->hTsAvailable;
+		//# wait for buffer available...
+		dRet = WaitForMultipleObjects(2, events , FALSE, timeout);
+	}
+	if(WAIT_OBJECT_0+1 == dRet)  return 1;
+	else if(WAIT_OBJECT_0 == dRet || WAIT_TIMEOUT == dRet)  return 0;
 
 	warn_info(dRet,"poll failed");
 	return -1;

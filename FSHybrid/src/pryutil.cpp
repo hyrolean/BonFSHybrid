@@ -638,7 +638,7 @@ CAsyncFifo::CAsyncFifo(
     EmptyLimit(0),
     PacketSize(packetSize),
     THREADWAIT(threadWait),
-    AllocThread(NULL),
+    AllocThread(INVALID_HANDLE_VALUE),
     AllocOrderEvent(FALSE),
     AllocatedEvent(FALSE),
     ModerateAllocating(true),
@@ -664,9 +664,7 @@ CAsyncFifo::CAsyncFifo(
     // アロケーションスレッド作成
     if(MaximumPool>TotalPool) {
       AllocThread = (HANDLE)_beginthreadex(NULL, 0, AllocThreadProc, this, CREATE_SUSPENDED, NULL) ;
-      if(AllocThread == INVALID_HANDLE_VALUE) {
-          AllocThread = NULL;
-      }else{
+      if(AllocThread != INVALID_HANDLE_VALUE) {
           SetThreadPriority(AllocThread,threadPriority);
           ::ResumeThread(AllocThread) ;
       }
@@ -678,7 +676,7 @@ CAsyncFifo::~CAsyncFifo()
     // アロケーションスレッド破棄
     Terminated=true ;
     bool abnormal=false ;
-    if(AllocThread) {
+    if(AllocThread!=INVALID_HANDLE_VALUE) {
       AllocOrderEvent.set() ;
       if(::WaitForSingleObject(AllocThread,30000) != WAIT_OBJECT_0) {
         ::TerminateThread(AllocThread, 0);

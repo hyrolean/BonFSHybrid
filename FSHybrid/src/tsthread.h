@@ -7,11 +7,13 @@
 #include "types_u.h"
 
 //# URB thread settings
+extern BOOL TSTHREAD_DUPLEX;
 extern int TSTHREAD_PRIORITY;
 extern DWORD TSTHREAD_POLL_TIMEOUT;
 extern DWORD TSTHREAD_SUBMIT_TIMEOUT;
-extern int TSTHREAD_NUMIO ; //# number of I/O buffering
-extern int TSTHREAD_SUBMIT_IOLIMIT ; //# keeping number of I/O buffering at least
+extern int TSTHREAD_NUMIO; //# number of I/O buffering
+extern int TSTHREAD_SUBMIT_IOLIMIT; //# keeping number of I/O buffering at least
+extern BOOL TSTHREAD_LOCK_ON_WINUSB;
 
 //# power policy disable suspending
 extern BOOL USBPOWERPOLICY_AVOID_SUSPEND ;

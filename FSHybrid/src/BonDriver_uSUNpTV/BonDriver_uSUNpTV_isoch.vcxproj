@@ -132,21 +132,33 @@
     <ClCompile>
       <PreprocessorDefinitions>WIN32;INCLUDE_ISOCH_XFER;_DEBUG;_WINDOWS;_USRDLL;FSUSB2N_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>INCLUDE_ISOCH_XFER;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;INCLUDE_ISOCH_XFER;_DEBUG;_WINDOWS;_USRDLL;FSUSB2N_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>INCLUDE_ISOCH_XFER;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;INCLUDE_ISOCH_XFER;NDEBUG;_WINDOWS;_USRDLL;FSUSB2N_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>INCLUDE_ISOCH_XFER;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;INCLUDE_ISOCH_XFER;NDEBUG;_WINDOWS;_USRDLL;FSUSB2N_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>INCLUDE_ISOCH_XFER;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\bonhybrid.h" />

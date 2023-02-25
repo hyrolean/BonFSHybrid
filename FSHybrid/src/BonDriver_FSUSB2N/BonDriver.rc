@@ -4,8 +4,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 0,2015,1,4
- PRODUCTVERSION 0,2015,1,4
+ FILEVERSION 0,2020,10,10
+ PRODUCTVERSION 0,2020,10,10
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,15 +20,21 @@ BEGIN
     BEGIN
         BLOCK "041104b0"
         BEGIN
-            VALUE "CompanyName", "WPjeGg6tSA"
+            VALUE "CompanyName", "hyrolean-dtv inspired by WPjeGg6tSA"
+            VALUE "FileVersion", "0,2020,10,10"
+#ifdef INCLUDE_ISOCH_XFER
+            VALUE "FileDescription", "BonDriver for FSUSB2N (isoch support)"
+            VALUE "InternalName", "BonDriver_FSUSB2N_isoch.dll"
+            VALUE "OriginalFilename", "BonDriver_FSUSB2N_isoch.dll"
+            VALUE "ProductName", "BonDriver_FSUSB2N_isoch"
+#else
             VALUE "FileDescription", "BonDriver for FSUSB2N"
-            VALUE "FileVersion", "0,2015,1,4"
             VALUE "InternalName", "BonDriver_FSUSB2N.dll"
-            VALUE "LegalCopyright", "WPjeGg6tSA 2009-2012"
             VALUE "OriginalFilename", "BonDriver_FSUSB2N.dll"
             VALUE "ProductName", "BonDriver_FSUSB2N"
-            VALUE "ProductVersion", "0,2015,1,4"
-            VALUE "Comments", "MOD by PRY8EAlByw 2014-2015"
+#endif
+            VALUE "LegalCopyright", "hyrolean-dtv 2014-2020 inspired by WPjeGg6tSA 2009-2012"
+            VALUE "ProductVersion", "0,2020,10,10"
         END
     END
     BLOCK "VarFileInfo"

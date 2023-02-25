@@ -2,8 +2,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 0,1,4,27
- PRODUCTVERSION 0,1,4,27
+ FILEVERSION 0,2020,10,10
+ PRODUCTVERSION 0,2020,10,10
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -18,14 +18,14 @@ BEGIN
     BEGIN
         BLOCK "041104b0"
         BEGIN
-            VALUE "CompanyName", "trinity19683"
+            VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
             VALUE "FileDescription", "BonDriver for FSUSB2i"
-            VALUE "FileVersion", "0,1,4,27"
+            VALUE "FileVersion", "0,2020,10,10"
             VALUE "InternalName", "BonDriver_FSUSB2i.dll"
-            VALUE "LegalCopyright", "trinity19683 2015-2016"
+            VALUE "LegalCopyright", "hyrolean-dtv 2018-2020 inspired by trinity19683 2015-2016"
             VALUE "OriginalFilename", "BonDriver_FSUSB2i.dll"
             VALUE "ProductName", "BonDriver_FSUSB2i"
-            VALUE "ProductVersion", "0,1,4,27"
+            VALUE "ProductVersion", "0,2020,10,10"
         END
     END
     BLOCK "VarFileInfo"

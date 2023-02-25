@@ -1,4 +1,4 @@
-BonDriver_FSUSB2N.dll MOD @ 2020/10/9
+BonDriver_FSUSB2N.dll MOD @ 2021/3/18
 
 ■オリジナル版から新たに追加した機能
 
@@ -21,6 +21,10 @@ BonDriver_FSUSB2N.dll MOD @ 2020/10/9
 
 ■更新履歴
 
+2020/10/9 からの変更点
+
+  ・FastScanに対応 ( .ini のFSUSB2N_FASTSCAN[y/n]で機能切替可 )
+
 2020/6/20 からの変更点
 
   ・Windows8.1以降で動作するアイソクロナス転送(無変更K0905の個体)に対応したプ
@@ -36,7 +40,7 @@ BonDriver_FSUSB2N.dll MOD @ 2020/10/9
 
   ・シグナル取得時に転送処理を止めるかどうか決定するフラグを .ini に追加
     ( FSUSB2N_LOCK_ON_SIGNALで変更可能 初期値1<ロックする> )
-    
+
 2019/12/22 からの変更点
 
   ・シグナル取得処理の最適化

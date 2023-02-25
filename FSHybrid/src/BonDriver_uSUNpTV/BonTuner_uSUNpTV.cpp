@@ -18,13 +18,14 @@ using namespace std ;
 
 namespace uSUNpTV {
 
-DWORD USUNPTV_SETSFREQ_TIMES  = 1   ;
-DWORD USUNPTV_SETSTSID_TIMES  = 2   ;
-DWORD USUNPTV_SETTFREQ_TIMES  = 1   ;
-DWORD USUNPTV_SETSLOCK_WAIT   = 10  ;
-DWORD USUNPTV_SETSTSID_WAIT   = 800 ;
-DWORD USUNPTV_CHANNEL_WAIT    = 480 ;
-BOOL  USUNPTV_LOCK_ON_SIGNAL  = TRUE;
+DWORD USUNPTV_SETSFREQ_TIMES  = 1     ;
+DWORD USUNPTV_SETSTSID_TIMES  = 2     ;
+DWORD USUNPTV_SETTFREQ_TIMES  = 1     ;
+DWORD USUNPTV_SETSLOCK_WAIT   = 10    ;
+DWORD USUNPTV_SETSTSID_WAIT   = 800   ;
+DWORD USUNPTV_CHANNEL_WAIT    = 800   ;
+BOOL  USUNPTV_LOCK_ON_SIGNAL  = TRUE  ;
+BOOL  USUNPTV_FASTSCAN        = FALSE ;
 
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
@@ -234,25 +235,29 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 		::Sleep( 50 );
 		if(fail&&n==1) return FALSE;
 	}
+
+	if(hasStream) {
+		hasStream=FALSE;
+		for(DWORD e=0,s=Elapsed();USUNPTV_CHANNEL_WAIT>e;e=Elapsed(s)) {
+			unsigned statData[4];
+			::Sleep( 40 );
+			if( tc90522_readStatistic(demodDev, tunerNum, statData) ) continue;
+			if( statData[0] & 0x10 ) { hasStream=TRUE; break; }
+		}
+	}
+
 	//# set variables
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
-	m_hasStream = hasStream ;
 	m_selectedTuner = tunerNum;
 	m_chCur = ch ;
+	m_hasStream = hasStream ;
 
 	if(hasStream) FifoStart() ;
 
-	for(DWORD e=0,s=Elapsed();USUNPTV_CHANNEL_WAIT>e;e=Elapsed(s)) {
-		unsigned statData[4];
-		::Sleep( 40 );
-		if( tc90522_readStatistic(demodDev, tunerNum, statData) ) continue;
-		if( statData[0] & 0x10 ) break;
-	}
-
 	PurgeTsStream();
 
-	return TRUE;
+	return USUNPTV_FASTSCAN ? hasStream : TRUE;
 }
 
 const DWORD CBonTuner::GetCurSpace(void)
@@ -272,6 +277,7 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	LOADDW(USUNPTV_SETSTSID_WAIT);
 	LOADDW(USUNPTV_CHANNEL_WAIT);
     LOADDW(USUNPTV_LOCK_ON_SIGNAL);
+	LOADDW(USUNPTV_FASTSCAN);
 	#undef LOADDW
 }
 

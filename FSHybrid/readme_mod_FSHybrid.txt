@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2021/2/7
+BonDriver_FSHybrid.dll MOD @ 2021/3/18
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,10 @@ BonDriver_FSHybrid.dll MOD @ 2021/2/7
 
 
 ■更新履歴
+
+2021/2/7 からの変更点
+
+  ・各々のBonDriverをFastScan(高速チャンネルスキャン)に対応
 
 2020/11/22 からの変更点
 

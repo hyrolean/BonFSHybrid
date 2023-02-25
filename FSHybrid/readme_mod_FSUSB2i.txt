@@ -1,4 +1,4 @@
-BonDriver_FSUSB2i.dll MOD @ 2020/5/22
+BonDriver_FSUSB2i.dll MOD @ 2021/3/18
 
 ■オリジナル版から新たに追加した機能
 
@@ -31,6 +31,10 @@ BonDriver_FSUSB2i.dll MOD @ 2020/5/22
 
 
 ■更新履歴
+
+2020/5/22 からの変更点
+
+  ・FastScanに対応 ( .ini のFSUSB2I_FASTSCAN[y/n]で機能切替可 )
 
 2020/4/27 からの変更点
 
@@ -69,7 +73,7 @@ BonDriver_FSUSB2i.dll MOD @ 2020/5/22
       ASYNCTS_EMPTYBORDER … アロケーション開始空バッファ下限数 規定値12 750KB
       ASYNCTS_EMPTYLIMIT … オーバーラップから保障するバッファ数 規定値6 375KB
 
-	  
+
 ■使用制限
 
   無保証（NO WARRANTY）

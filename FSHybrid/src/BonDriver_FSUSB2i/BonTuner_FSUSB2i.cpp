@@ -13,9 +13,11 @@ using namespace std ;
 
 namespace FSUSB2i {
 
-DWORD FSUSB2I_SETFREQ_TIMES     = 2 ;
-DWORD FSUSB2I_TUNING_WAIT       = 1500 ;
-BOOL  FSUSB2I_LOCK_ON_SIGNAL    = TRUE ;
+DWORD FSUSB2I_SETFREQ_TIMES  = 2     ;
+DWORD FSUSB2I_TUNING_WAIT    = 1500  ;
+DWORD FSUSB2I_CHANNEL_WAIT   = 800   ;
+BOOL  FSUSB2I_LOCK_ON_SIGNAL = TRUE  ;
+BOOL  FSUSB2I_FASTSCAN       = FALSE ;
 
 const TCHAR* const g_RegKey = TEXT("Software\\trinity19683\\FSUSB2i");
 
@@ -140,12 +142,21 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	FifoStart();
 
 	if((ret = it9175_waitTuning(pDev, FSUSB2I_TUNING_WAIT)) < 0) return FALSE;
-	//# ignore check empty channel
-	//# ignore check TS sync lock
+
+	//# check empty channel
+	//# check TS sync lock
+	uint8_t statics[10];
+	BOOL locked = FALSE ;
+	for(DWORD e=0,s=Elapsed();FSUSB2I_CHANNEL_WAIT>e;e=Elapsed(s)) {
+		::Sleep( 40 );
+		if(it9175_readStatistic(pDev, statics)==0) {
+			if((statics[0]&3)==3) { locked =  TRUE ; break ; }
+		}
+	}
 
 	PurgeTsStream();
 
-	return TRUE;
+	return FSUSB2I_FASTSCAN? locked: TRUE;
 }
 
 const DWORD CBonTuner::GetCurSpace(void)
@@ -161,7 +172,9 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	#define LOADDW(val) do { val = Loader->ReadDWORD(L#val,val); } while(0)
 	LOADDW(FSUSB2I_SETFREQ_TIMES);
 	LOADDW(FSUSB2I_TUNING_WAIT);
+	LOADDW(FSUSB2I_CHANNEL_WAIT);
     LOADDW(FSUSB2I_LOCK_ON_SIGNAL);
+	LOADDW(FSUSB2I_FASTSCAN);
 	#undef LOADDW
 }
 

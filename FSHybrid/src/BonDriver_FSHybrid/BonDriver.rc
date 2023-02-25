@@ -2,8 +2,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 0,2020,02,07
- PRODUCTVERSION 0,2020,02,07
+ FILEVERSION 0,2021,03,18
+ PRODUCTVERSION 0,2021,03,18
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -19,7 +19,7 @@ BEGIN
         BLOCK "041104b0"
         BEGIN
             VALUE "CompanyName", "hyrolean-dtv inspired by trinity19683"
-            VALUE "FileVersion", "0,2020,02,07"
+            VALUE "FileVersion", "0,2021,03,18"
 #ifdef INCLUDE_ISOCH_XFER
             VALUE "FileDescription", "Hybrid BonDriver for FSUSB2N/FSUSB2i/uSUNpTV (isoch support)"
             VALUE "InternalName", "BonDriver_FSHybrid_isoch.dll"
@@ -32,7 +32,7 @@ BEGIN
             VALUE "ProductName", "BonDriver_FSHybrid"
 #endif
             VALUE "LegalCopyright", "hyrolean-dtv 2019-2021 inspired by trinity19683 2015-2016"
-            VALUE "ProductVersion", "0,2020,02,07"
+            VALUE "ProductVersion", "0,2021,03,18"
         END
     END
     BLOCK "VarFileInfo"

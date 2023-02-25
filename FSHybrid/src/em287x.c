@@ -14,6 +14,7 @@
 #include "em287x_usb.h"
 #include "em287x_priv.h"
 #include "message.h"
+#include "tsbuff.h"
 
 #define ARRAY_SIZE(x)  (sizeof(x)/(sizeof(x[0])))
 
@@ -240,6 +241,7 @@ err1:
 
 /* public function */
 
+extern int TSCACHING_BULKPACKETSIZE;
 int em287x_create(em287x_state* const  state, struct usb_endpoint_st * const pusbep)
 {
 	int ret;
@@ -263,6 +265,7 @@ int em287x_create(em287x_state* const  state, struct usb_endpoint_st * const pus
 	pusbep->endpoint = EP_TS1;
 	pusbep->dev = st;
 	pusbep->startstopFunc = em287x_startstopStream;
+	pusbep->lockunlockFunc = em287x_lockunlockMutex;
 	st->chip_id = 0;
 	st->fd = pusbep->fd;
 	if(( ret = usb_claim(st->fd, 0) )) {
@@ -281,14 +284,25 @@ int em287x_create(em287x_state* const  state, struct usb_endpoint_st * const pus
 	//# TS endpoint
 	if(( ret = readReg(st, 0x0b, &utmp) ))  { warn_info(ret,"failed"); return -8; }
 	if( utmp & 0x02 ) {
+		int n=
+		#ifdef INCLUDE_ISOCH_XFER
+		ISOCH_FrameSize/188
+		#else
+		5
+		#endif
+		;
 		//# set Isochronous transfer size (unit: packet)
-		if(( ret = writeReg(st, 0x5e, 5 ) ))  { warn_info(ret,"failed"); return -8; }
+		if(( ret = writeReg(st, 0x5e, (uint8_t)(n) ) ))  { warn_info(ret,"failed"); return -8; }
 		pusbep->endpoint |= 0x100;
-		pusbep->xfer_size = 188 * 5;
+		pusbep->xfer_size = n * 188UL ;
 	}else{
+		int packet_size = TSCACHING_BULKPACKETSIZE>0 ?
+			TSCACHING_BULKPACKETSIZE : TS_PacketSize ;
+		int n = packet_size/188 ;
+		if(n>=256) n=256 ; else if(n<=0) n=1 ;
 		//# set BULK transfer size (unit: packet)
-		if(( ret = writeReg(st, 0x5d, 245 - 1 ) ))  { warn_info(ret,"failed"); return -8; }
-		pusbep->xfer_size = 188 * 245;
+		if(( ret = writeReg(st, 0x5d, (uint8_t)(n - 1) ) ))  { warn_info(ret,"failed"); return -8; }
+		pusbep->xfer_size = n>=256 ? packet_size : n * 188UL ;
 	}
 
 	dmsg(" em287x init done!");
@@ -347,6 +361,21 @@ int em287x_startstopStream(const em287x_state state, const int start)
 	return 0;
 }
 
+int em287x_lockunlockMutex(const em287x_state state, const int lock)
+{
+	int r = 0;
+	struct state_st* const s = state;
 
+	if(lock) {
+		if((r = uthread_mutex_lock(s->pmutex))) goto err1 ;
+	}else {
+		if((r = uthread_mutex_unlock(s->pmutex))) goto err1 ;
+	}
+
+	return 0;
+err1:
+	warn_info(r,"failed");
+	return r;
+}
 
 /*EOF*/

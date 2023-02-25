@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -22,6 +22,8 @@
     <ProjectGuid>{A9765A26-A6C9-4135-ADFA-3DA4CF26EE67}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>uSUNpTV</RootNamespace>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <ProjectName>BonDriver_uSUNpTV</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
@@ -36,7 +38,13 @@
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x64'" Label="Configuration">
-    <PlatformToolset>Windows7.1SDK</PlatformToolset>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PlatformToolset>v140</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -65,10 +73,28 @@
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
-    <LibraryPath>..\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x64'">
-    <LibraryPath>..\lib64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(SolutionDir)..\</OutDir>
+    <IntDir>$(SolutionDir)..\_intermediate_\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(SolutionDir)..\</OutDir>
+    <IntDir>$(SolutionDir)..\_intermediate_\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)..\</OutDir>
+    <TargetName>$(ProjectName)_$(Platform)</TargetName>
+    <IntDir>$(SolutionDir)..\_intermediate_\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)..\</OutDir>
+    <TargetName>$(ProjectName)_$(Platform)</TargetName>
+    <IntDir>$(SolutionDir)..\_intermediate_\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -123,6 +149,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\bonhybrid.h" />
     <ClInclude Include="..\em287x.h" />
     <ClInclude Include="..\em287x_priv.h" />
     <ClInclude Include="..\em287x_usb.h" />
@@ -134,13 +161,21 @@
     <ClInclude Include="..\tda20142.h" />
     <ClInclude Include="..\tsbuff.h" />
     <ClInclude Include="..\tsthread.h" />
+    <ClInclude Include="..\twindbg.h" />
     <ClInclude Include="..\types_u.h" />
     <ClInclude Include="..\usbdevfile.h" />
     <ClInclude Include="..\usbops.h" />
-    <ClInclude Include="BonTuner.h" />
+    <ClInclude Include="BonTuner_uSUNpTV.h" />
+    <ClInclude Include="..\pryutil.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\bonhybrid.cpp">
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+    </ClCompile>
     <ClCompile Include="..\em287x.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -161,10 +196,13 @@
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="..\usbops.c" />
-    <ClCompile Include="BonTuner.cpp">
+    <ClCompile Include="BonTuner_uSUNpTV.cpp">
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="dllmain.cpp">
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+    </ClCompile>
+    <ClCompile Include="..\pryutil.cpp">
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="stdafx.c">

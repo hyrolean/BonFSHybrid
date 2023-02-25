@@ -13,6 +13,7 @@ int tc90522_init(void * const);
 int tc90522_selectDevice(void * const, const unsigned devnum);
 int tc90522_powerControl(void * const, const unsigned devnum, const int isWake);
 int tc90522_resetDemod(void * const, const unsigned devnum);
+int tc90522_setTSID(void * const, const unsigned devnum, const unsigned ts_id);
 int tc90522_selectStream(void * const, const unsigned devnum, const unsigned tsSel);
 int tc90522_readTMCC(void * const, const unsigned devnum, void* const pData);
 int tc90522_readStatistic(void * const, const unsigned devnum, unsigned* const data);

@@ -1,6 +1,5 @@
 
 #include "stdafx.h"
-#include "../twindbg.h"
 
 #include "ktv.h"
 
@@ -29,7 +28,7 @@ KtvDevice::~KtvDevice()
 bool KtvDevice::DeMod_Write (const uint8_t idx, const uint8_t val)
 {
 	usbDev->writeReg(EM28XX_REG_I2C_CLK, 0x44);
-	uint8_t buf[] = {idx, val};
+    uint8_t buf[] = {idx, val};
 	return usbDev->writeI2C(DEMOD_ADDR, 2, buf, true);
 }
 
@@ -241,7 +240,7 @@ void Ktv1Device::InitTuner ()
 		0x00, 0x00, 0x96, 0x33, 0xc1, 0x00, 0x8f, 0x00,
 		0x00, 0x8c, 0x00, 0x20, 0xb3, 0x48, 0xb0,
 	// Setup AGC1 gain
-	0x20, 0x01, 0x00, 
+	0x20, 0x01, 0x00,
 	0x20, 0x01, 0x03,
 	0x20, 0x01, 0x43,
 	0x20, 0x01, 0x4c,
@@ -415,7 +414,7 @@ void Ktv1Device::SetFrequency (unsigned int freq_khz)
 	};
 
 	tuner_r[0x07] ^= (::binarySearch( ir_measure, TBL_SZ( ir_measure ), freq_khz ) ^ tuner_r[0x07]) & 0x07;
-	
+
 	tuner_r[0x10] &= ~0x03;
 	Tuner_RegWrite(0x10, 1);
 
@@ -632,14 +631,13 @@ Ktv2Device::Ktv2Device (EM2874Device *pDev) : KtvDevice(pDev)
 
 Ktv2Device::~Ktv2Device()
 {
-	static uint8_t rData[] = { 0x01,0, 0x0f,0 };
 	if( usbDev != NULL ) {
-		Tuner_I2C_Write(rData, TBL_SZ(rData));	// enter standby mode
+		SleepTuner();
 	}
 }
 
 void Ktv2Device::InitTuner ()
-{	
+{
 	static uint8_t initData[] = {
 		0x02,0x00, 0x03,0x40, 0x05,0x04, 0x06,0x10,
 		0x2e,0x15, 0x30,0x10, 0x45,0x58, 0x48,0x19,
@@ -651,6 +649,13 @@ void Ktv2Device::InitTuner ()
 	Tuner_I2C_Write(initData, TBL_SZ(initData));
 	miliWait(5);
 	Tuner_InitDone = true;
+}
+
+bool Ktv2Device::SleepTuner ()
+{
+	static uint8_t rData[] = { 0x01,0, 0x0f,0 };
+	Tuner_I2C_Write(rData, TBL_SZ(rData));	// enter standby mode
+    return true ;
 }
 
 void Ktv2Device::SetFrequency (unsigned int freq_khz)

@@ -4,7 +4,16 @@
   2016-01-22
 */
 #pragma once
+#ifdef LEGACY_STDINT
+
+#include "stdint_.h"
+
+#else
+
 #include <stdint.h>
+
+#endif
+
 
 #define USB_TIMEOUT 400   //# USB ctrl timeout (msec)
 

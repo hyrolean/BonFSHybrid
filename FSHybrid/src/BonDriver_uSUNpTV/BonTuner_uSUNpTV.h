@@ -9,10 +9,20 @@
 extern "C" {
 #include "../em287x.h"
 #include "../tsthread.h"
+#include "../tsbuff.h"
 }
 
-class CBonTuner : public IBonDriver2
+#include "../bonhybrid.h"
+
+namespace uSUNpTV {
+
+class CBonTuner : public CBonFSHybrid
 {
+protected:
+	const TCHAR *RegName() ;
+	int UserDecidedDeviceIdx() ;
+	virtual void LoadValues(const IValueLoader *Loader);
+
 public:
 	CBonTuner();
 	virtual ~CBonTuner();
@@ -21,39 +31,25 @@ public:
 	const BOOL OpenTuner(void);
 	void CloseTuner(void);
 
-	const BOOL SetChannel(const BYTE bCh);
 	const float GetSignalLevel(void);
-
-	const DWORD WaitTsStream(const DWORD dwTimeOut = 0);
-	const DWORD GetReadyCount(void);
-
-	const BOOL GetTsStream(BYTE *pDst, DWORD *pdwSize, DWORD *pdwRemain);
-	const BOOL GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwRemain);
-
-	void PurgeTsStream(void);
 
 //# IBonDriver2
 	LPCTSTR GetTunerName(void);
 
 	const BOOL IsTunerOpening(void);
-	
-	LPCTSTR EnumTuningSpace(const DWORD dwSpace);
-	LPCTSTR EnumChannelName(const DWORD dwSpace, const DWORD dwChannel);
 
 	const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel);
-	
+
 	const DWORD GetCurSpace(void);
 	const DWORD GetCurChannel(void);
 
 	void Release(void);
 
-	static CBonTuner * m_pThis;
-	static HINSTANCE m_hModule;
-
 protected:
 	DWORD m_dwCurSpace;
 	DWORD m_dwCurChannel;
-	DWORD *m_ChannelList;
+    BOOL m_hasStream;
+	CHANNEL m_chCur ;
 
 	HANDLE m_hDev;
 	HANDLE m_hUsbDev;
@@ -62,9 +58,8 @@ protected:
 	void* demodDev;
 	void* tunerDev[2];
 	int m_selectedTuner;
-	tsthread_ptr tsthr;
 
-	bool LoadData ();
-	void ReadRegMode (HKEY hPKey);
-	void ReadRegChannels (HKEY hPKey);
 };
+
+} // End of namespace uSUNpTV
+

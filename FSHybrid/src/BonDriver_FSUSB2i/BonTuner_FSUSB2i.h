@@ -9,10 +9,20 @@
 extern "C" {
 #include "../it9175.h"
 #include "../tsthread.h"
+#include "../tsbuff.h"
 }
 
-class CBonTuner : public IBonDriver2
+#include "../bonhybrid.h"
+
+namespace FSUSB2i {
+
+class CBonTuner : public CBonFSHybrid
 {
+protected:
+	const TCHAR *RegName() ;
+	int UserDecidedDeviceIdx() ;
+	void LoadValues(const IValueLoader *Loader) ;
+
 public:
 	CBonTuner();
 	virtual ~CBonTuner();
@@ -21,47 +31,30 @@ public:
 	const BOOL OpenTuner(void);
 	void CloseTuner(void);
 
-	const BOOL SetChannel(const BYTE bCh);
 	const float GetSignalLevel(void);
-
-	const DWORD WaitTsStream(const DWORD dwTimeOut = 0);
-	const DWORD GetReadyCount(void);
-
-	const BOOL GetTsStream(BYTE *pDst, DWORD *pdwSize, DWORD *pdwRemain);
-	const BOOL GetTsStream(BYTE **ppDst, DWORD *pdwSize, DWORD *pdwRemain);
-
-	void PurgeTsStream(void);
 
 //# IBonDriver2
 	LPCTSTR GetTunerName(void);
 
 	const BOOL IsTunerOpening(void);
-	
-	LPCTSTR EnumTuningSpace(const DWORD dwSpace);
-	LPCTSTR EnumChannelName(const DWORD dwSpace, const DWORD dwChannel);
 
 	const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel);
-	
+
 	const DWORD GetCurSpace(void);
 	const DWORD GetCurChannel(void);
 
 	void Release(void);
 
-	static CBonTuner * m_pThis;
-	static HINSTANCE m_hModule;
-
 protected:
 	DWORD m_dwCurSpace;
 	DWORD m_dwCurChannel;
-	DWORD *m_ChannelList;
 
 	HANDLE m_hDev;
 	HANDLE m_hUsbDev;
 	struct usb_endpoint_st  m_USBEP;
 	it9175_state pDev;
-	tsthread_ptr tsthr;
 
-	bool LoadData ();
-	void ReadRegMode (HKEY hPKey);
-	void ReadRegChannels (HKEY hPKey);
 };
+
+} // End of namespace FSUSB2i
+

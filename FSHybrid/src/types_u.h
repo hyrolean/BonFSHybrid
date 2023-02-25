@@ -13,7 +13,8 @@ struct usb_endpoint_st {
 	unsigned  endpoint;    //# USB endpoint
 	void* dev;
 	int (* startstopFunc)(void * const  dev, const int start);
-	unsigned  xfer_size;    //# transfer unit size
+	int (* lockunlockFunc)(void * const  dev, const int lock);
+    unsigned  xfer_size;    //# transfer unit size
 };
 
 struct i2c_device_st {

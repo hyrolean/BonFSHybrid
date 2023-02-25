@@ -11,15 +11,11 @@
 
 #include "usbdevfile.h"
 
-// Driver Instance GUID
-DEFINE_GUID( GUID_WINUSB_DRV,	0xa70cc802, 0x7309, 0x486d, 0xbe, 0xe8, 0x93, 0xa0, 0x48, 0xcf, 0x6c, 0x63);
-
-HANDLE usbdevfile_alloc(unsigned int * const idx)
+HANDLE usbdevfile_alloc(int * const idx, const GUID *pDrvID)
 {
 	DWORD dwRet;
 	ULONG length;
 	HANDLE hDev = INVALID_HANDLE_VALUE;
-	GUID * const pDrvID = (GUID *)&GUID_WINUSB_DRV;
 
 	// get handle to device info.
 	HDEVINFO deviceInfo = SetupDiGetClassDevs(pDrvID, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
@@ -28,7 +24,10 @@ HANDLE usbdevfile_alloc(unsigned int * const idx)
 	SP_DEVICE_INTERFACE_DATA interfaceData;
 	interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
 
-	for(; *idx < 40; (*idx)++ ) {
+    const int idmax = (*idx<0) ? 40 : *idx+1 ;
+    if(*idx<0) *idx=0 ;
+
+	for(; *idx < idmax; (*idx)++ ) {
 		//# enumerate device interfaces
 		if( FALSE == SetupDiEnumDeviceInterfaces(deviceInfo, NULL, pDrvID, *idx, &interfaceData) ) {
 			dwRet = GetLastError();
@@ -58,7 +57,7 @@ HANDLE usbdevfile_alloc(unsigned int * const idx)
 		GlobalFree(detailData);
 	}
 	SetupDiDestroyDeviceInfoList(deviceInfo);
-	
+
 	if(INVALID_HANDLE_VALUE == hDev) return NULL;
 	return hDev;
 }

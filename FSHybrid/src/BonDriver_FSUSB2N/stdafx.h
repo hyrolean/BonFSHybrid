@@ -6,3 +6,7 @@
 #include <windows.h>
 #include <tchar.h>
 #include <process.h>
+
+#include "../message.h"
+
+#include "../twindbg.h"

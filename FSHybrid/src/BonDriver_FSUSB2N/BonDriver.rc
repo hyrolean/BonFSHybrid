@@ -4,8 +4,8 @@
 
 LANGUAGE LANG_JAPANESE, SUBLANG_DEFAULT
 1 VERSIONINFO
- FILEVERSION 1,0,1,3
- PRODUCTVERSION 1,0,1,3
+ FILEVERSION 0,2015,1,4
+ PRODUCTVERSION 0,2015,1,4
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -22,12 +22,13 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "WPjeGg6tSA"
             VALUE "FileDescription", "BonDriver for FSUSB2N"
-            VALUE "FileVersion", "1,0,1,3"
+            VALUE "FileVersion", "0,2015,1,4"
             VALUE "InternalName", "BonDriver_FSUSB2N.dll"
             VALUE "LegalCopyright", "WPjeGg6tSA 2009-2012"
             VALUE "OriginalFilename", "BonDriver_FSUSB2N.dll"
             VALUE "ProductName", "BonDriver_FSUSB2N"
-            VALUE "ProductVersion", "1,0,1,3"
+            VALUE "ProductVersion", "0,2015,1,4"
+            VALUE "Comments", "MOD by PRY8EAlByw 2014-2015"
         END
     END
     BLOCK "VarFileInfo"

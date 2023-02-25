@@ -10,12 +10,13 @@
 class KtvDevice {
 public:
 	KtvDevice (EM2874Device *pDev);
-	~KtvDevice();
+	virtual ~KtvDevice();
 
 	virtual void InitTuner () = 0;
 	virtual void SetFrequency (unsigned int freq_khz) = 0;
 	virtual void InitDeMod () = 0;
 	virtual void ResetDeMod () = 0;
+    virtual bool SleepTuner () = 0;
 	uint8_t DeMod_GetSequenceState();
 	unsigned int DeMod_GetQuality();
 	unsigned DeMod_GetBER(int *pVal);
@@ -40,12 +41,13 @@ class Ktv1Device : public KtvDevice
 {
 public:
 	Ktv1Device (EM2874Device *pDev);
-	~Ktv1Device();
+	virtual ~Ktv1Device();
 
 	void InitTuner ();
 	void SetFrequency (unsigned int freq_khz);
 	void InitDeMod ();
 	void ResetDeMod ();
+    bool SleepTuner () { return false ; }
 
 private:
 	void Tuner_RegWrite (const uint8_t offset, const int len);
@@ -61,9 +63,10 @@ class Ktv2Device : public KtvDevice
 {
 public:
 	Ktv2Device (EM2874Device *pDev);
-	~Ktv2Device();
+	virtual ~Ktv2Device();
 
 	void InitTuner ();
+    bool SleepTuner();
 	void SetFrequency (unsigned int freq_khz);
 	void InitDeMod ();
 	void ResetDeMod ();

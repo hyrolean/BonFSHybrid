@@ -4,7 +4,16 @@
   2016-01-28
 */
 
+#ifdef LEGACY_STDINT
+
+#include "stdint_.h"
+
+#else
+
 #include <stdint.h>
+
+#endif
+
 #include <errno.h>
 #include <string.h>
 #include <malloc.h>
@@ -240,7 +249,7 @@ static int  setFreqParam(struct state_st* const s, const unsigned  freq, const i
 	freq_val += uval * denomi;
 	denomi *= mval;
 	dmsgn("freqVal= %u +%u/%u, ", u2val, freq_val, denomi);
-	
+
 	//# remainder * 65536 / denominator
 	mval = (u3val >> 16) & 0xFF;
 	freq_val <<= 8;

@@ -8,6 +8,7 @@
 #include "osdepend.h"
 
 #define UTHREAD_MUTEX_AS_CRITICAL_SECTION
+//#define UHEAP_AS_VIRTUAL
 
 void miliWait(unsigned msec)
 {
@@ -16,12 +17,20 @@ void miliWait(unsigned msec)
 
 void* uHeapAlloc(size_t sz)
 {
+#ifdef UHEAP_AS_VIRTUAL
 	return VirtualAlloc( NULL, sz, MEM_COMMIT, PAGE_READWRITE );
+#else
+	return HeapAlloc( GetProcessHeap(), 0, sz );
+#endif
 }
 
 void uHeapFree(void* const ptr)
 {
+#ifdef UHEAP_AS_VIRTUAL
 	VirtualFree( ptr, 0, MEM_RELEASE );
+#else
+	HeapFree( GetProcessHeap(), 0, ptr );
+#endif
 }
 
 int uthread_mutex_init(PMUTEX *p)
@@ -30,7 +39,7 @@ int uthread_mutex_init(PMUTEX *p)
 	if(NULL == p)
 		return -1;
 	if(NULL == *p) {
-		CRITICAL_SECTION *sec_p=uHeapAlloc(sizeof(CRITICAL_SECTION));
+		CRITICAL_SECTION *sec_p = (CRITICAL_SECTION*) uHeapAlloc(sizeof(CRITICAL_SECTION)) ;
 		if(sec_p==NULL) return ERROR_NOT_ENOUGH_MEMORY;
 		InitializeCriticalSection(sec_p);
 		*p=(PMUTEX)sec_p;

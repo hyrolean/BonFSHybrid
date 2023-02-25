@@ -7,6 +7,7 @@
 #include <climits>
 #include "bonhybrid.h"
 #include "usbdevfile.h"
+
 //---------------------------------------------------------------------------
 
 using namespace std;
@@ -68,6 +69,9 @@ BOOL BYTETUNING_USER = FALSE ;
 // 初期化に失敗した場合の再試行設定
 DWORD DEVICE_RETRY_TIMES = 3 ;       // デバイス初期化再試行最大回数
 DWORD TUNER_RETRY_DURATION = 3000 ;  // チューナーのオープン最大再試行時間
+
+// チューナー自動参照時に機器の参照IDを循環させるようにするかどうか
+BOOL DEVICE_ID_ROTATION = FALSE ;
 
 }
 
@@ -184,21 +188,49 @@ bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev
 	bool result = false ;
 	DWORD counter = 0;
 	hDev=hUsbDev=NULL;
+	int user_idx = UserDecidedDeviceIdx();
+	int rot_idx = -1 ;
+	wstring rot_nam = L"ROTATION_DEVICE_ID("+wstring(GetTunerName())+L")" ;
+	if(DEVICE_ID_ROTATION && user_idx<0) {
+		HKEY hKey ;
+		if(ERROR_SUCCESS == RegOpenKeyEx( HKEY_CURRENT_USER, RegName(), 0, KEY_READ, &hKey)) {
+			rot_idx = (int) CRegValueLoader(hKey).ReadDWORD(rot_nam,0);
+			rot_idx++;
+			RegCloseKey(hKey);
+		}else rot_idx=0;
+	}
 	do {
-		int idx = UserDecidedDeviceIdx();
-		if(counter>0){
+		int idx = user_idx < 0 ? rot_idx : user_idx ;
+		if(counter>0||hDev||hUsbDev){
 			Sleep(50);
 			FreeDevice(hDev,hUsbDev);
+			hDev=hUsbDev=NULL;
 			Sleep(1000) ; //# take a breath before retrying...
 		}
 		if((hDev = usbdevfile_alloc(&idx,&drvGUID) ) == NULL) {
+			if(user_idx<0&&rot_idx>=0) {
+				if(rot_idx!=0) rot_idx^=rot_idx;
+				else rot_idx=-1;
+				counter--;
+			}
 			continue; //# not found
 		}
 		if((hUsbDev = usbdevfile_init(hDev) ) == NULL) {
 			continue; //# failed
 		}
 		result = true ;
+		rot_idx = idx ;
 	}while(!result&&++counter<=DEVICE_RETRY_TIMES);
+	if(result && DEVICE_ID_ROTATION && rot_idx>=0) {
+		HKEY hKey ; DWORD dwDisposition ;
+		if( ERROR_SUCCESS == RegCreateKeyEx(
+				HKEY_CURRENT_USER, RegName(), 0, NULL, REG_OPTION_NON_VOLATILE,
+				KEY_ALL_ACCESS, NULL, &hKey, &dwDisposition) ) {
+			RegSetValueEx( hKey, rot_nam.c_str(), 0, REG_DWORD,
+				(BYTE*)&rot_idx, sizeof DWORD );
+			RegCloseKey(hKey);
+		}
+	}
 	return result ;
 }
 //---------------------------------------------------------------------------
@@ -655,6 +687,7 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(BYTETUNING_USER);
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADDW(TUNER_RETRY_DURATION);
+	LOADDW(DEVICE_ID_ROTATION);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
 	LOADDW(TSTHREAD_DUPLEX);

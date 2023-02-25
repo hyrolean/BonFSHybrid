@@ -45,11 +45,18 @@ public:
 
 	void Release(void);
 
+// IBonTransponder
+	const BOOL TransponderSelect(const DWORD dwSpace, const DWORD dwTransponder);
+	const BOOL TransponderGetIDList(LPDWORD lpIDList, LPDWORD lpdwNumID);
+	const BOOL TransponderSetCurID(const DWORD dwID);
+	const BOOL TransponderGetCurID(LPDWORD lpdwID);
+
 protected:
 	DWORD m_dwCurSpace;
 	DWORD m_dwCurChannel;
     BOOL m_hasStream;
 	CHANNEL m_chCur ;
+	BOOL select_ch(const CHANNEL &ch, BOOL doSetFreq=TRUE, BOOL doSetTSID=TRUE) ;
 
 	HANDLE m_hDev;
 	HANDLE m_hUsbDev;

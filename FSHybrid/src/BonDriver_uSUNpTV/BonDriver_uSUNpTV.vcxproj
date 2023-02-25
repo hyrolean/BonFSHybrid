@@ -167,6 +167,7 @@
     <ClInclude Include="..\usbops.h" />
     <ClInclude Include="BonTuner_uSUNpTV.h" />
     <ClInclude Include="..\pryutil.h" />
+    <ClInclude Include="..\HRTimer.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
@@ -203,6 +204,9 @@
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="..\pryutil.cpp">
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
+    </ClCompile>
+    <ClCompile Include="..\HRTimer.cpp">
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName)pp.pch</PrecompiledHeaderOutputFile>
     </ClCompile>
     <ClCompile Include="stdafx.c">

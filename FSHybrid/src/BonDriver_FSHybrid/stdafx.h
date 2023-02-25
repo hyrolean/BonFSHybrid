@@ -8,3 +8,5 @@
 #include "../message.h"
 
 #include "../twindbg.h"
+
+#include "../HRTimer.h"

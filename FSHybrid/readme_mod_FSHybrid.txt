@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2021/12/7
+BonDriver_FSHybrid.dll MOD @ 2022/5/3
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,21 @@ BonDriver_FSHybrid.dll MOD @ 2021/12/7
 
 
 ■更新履歴
+
+2021/12/7 からの変更点
+
+  ・各々のBonDriverをIBonTransponderインターフェイスに対応
+
+  ・iniファイルに高精度タイマーを使って割込み精度を高めるかどうかを決定する
+    HIGH_PRECISE_INTERRUPT 項目を追加
+
+  ・セマフォのタイムアウト期間到達後に受信したデータが廻って来た場合にバッファ
+    リング処理が停止してしまうことのある不具合を修正（ただし、ドロップまみれ）
+    (.iniファイルのTSCACHING_BULKPACKETSIZEを大きくし過ぎると発生する模様。
+     バルク転送のバッファパケットのサイズが大きすぎてTSストリームのヌルパケッ
+     トをハード的に除去する工程がチューナーの処理能力をオーバーするために頻繁
+     に起こる事象のようで、その場合は、.iniファイルのTSCACHING_DROPNULLPACKETS
+     の値をnにすることにより回避可能な模様。)
 
 2021/3/18 からの変更点
 

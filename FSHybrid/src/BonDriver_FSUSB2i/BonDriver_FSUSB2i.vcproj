@@ -651,6 +651,46 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath="..\HRTimer.cpp"
+				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="2"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="2"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="2"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|x64"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="2"
+						PrecompiledHeaderFile="$(IntDir)\$(TargetName)2.pch"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath=".\stdafx.c"
 				>
 				<FileConfiguration
@@ -890,6 +930,10 @@
 			</File>
 			<File
 				RelativePath="..\pryutil.h"
+				>
+			</File>
+			<File
+				RelativePath="..\HRTimer.h"
 				>
 			</File>
 			<File

@@ -131,6 +131,7 @@ void CBonTuner::CloseTuner()
 	FreeDevice(m_hDev,m_hUsbDev);
 	m_USBEP.dev=NULL;
 	m_chCur = CHANNEL();
+	m_selectedTuner = -1 ;
 }
 
 const float CBonTuner::GetSignalLevel(void)
@@ -165,22 +166,22 @@ LPCTSTR CBonTuner::GetTunerName(void)
 const BOOL CBonTuner::IsTunerOpening(void)
 { return m_hUsbDev ? TRUE : FALSE; }
 
-const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
+BOOL CBonTuner::select_ch(const CHANNEL &ch, BOOL doSetFreq, BOOL doSetTSID)
 {
+	BOOL hasStream = TRUE ;
 	int tunerNum = 0;
-	BOOL hasStream = TRUE;
 
-	CHANNEL ch = GetChannel(dwSpace,dwChannel) ;
+	if(ch.Band==BAND_na) {
+		warn_msg(0,"BonDriver_uSUNpTV:doSetChannel(BAND=na) invalid!");
+		return FALSE;
+	}
 
-	if(ch.Band==BAND_na || ch.Freq < 60000 || ch.Freq > 2456123 ) {
-		warn_msg(0,"BonDriver_uSUNpTV:SetChannel(%u,%u) invalid!", dwSpace, dwChannel);
+	if(ch.Freq < 60000 || ch.Freq > 2456123 ) {
+		warn_msg(0,"BonDriver_uSUNpTV:doSetChannel(Freq=%d) invalid!", ch.Freq);
 		return FALSE;
 	}
 	if( ch.Freq >= 900000 ) tunerNum = 1;
 
-	//# change channel
-	m_hasStream=FALSE ;
-	FifoStop() ;
 
 	if(tunerNum != m_selectedTuner) {
 		if( tc90522_selectDevice(demodDev, tunerNum) ) return FALSE;
@@ -188,20 +189,23 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 			mxl136_sleep(tunerDev[0]);
 		}else{
 			mxl136_wakeup(tunerDev[0]);
-			::Sleep( 30 );
+			HRSleep( 30 );
 		}
+		m_selectedTuner = tunerNum;
 	}
 	if(tunerNum & 0x1) {
-		for(DWORD n=USUNPTV_SETSFREQ_TIMES;n;n--)
-		if( m_chCur.Band!=ch.Band || m_chCur.Freq != ch.Freq ) {
-			unsigned fail=0 ;
-			if( tda20142_setFreq(tunerDev[1], ch.Freq) ) fail++ ;
-			::Sleep( 30 );
-			if( !fail && tc90522_resetDemod(demodDev, tunerNum ) ) fail++ ;
-			if(n>1) ::Sleep( 50 );
-			if(fail&&n==1) return FALSE;
+		if(doSetFreq) {
+			for(DWORD n=USUNPTV_SETSFREQ_TIMES;n;n--)
+			if( m_chCur.Band!=ch.Band || m_chCur.Freq != ch.Freq ) {
+				unsigned fail=0 ;
+				if( tda20142_setFreq(tunerDev[1], ch.Freq) ) fail++ ;
+				HRSleep( 30 );
+				if( !fail && tc90522_resetDemod(demodDev, tunerNum ) ) fail++ ;
+				if(n>1) HRSleep( 50 );
+				if(fail&&n==1) return FALSE;
+			}
 		}
-		for(DWORD n=USUNPTV_SETSTSID_TIMES;n;n--) {
+		if(doSetTSID) for(DWORD n=USUNPTV_SETSTSID_TIMES;n;n--) {
 			hasStream = FALSE;
 			unsigned fail=0, lock=0 ;
 			for(DWORD e=0,s=Elapsed();USUNPTV_SETSTSID_WAIT>e;e=Elapsed(s)) {
@@ -211,7 +215,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 					ret =tc90522_readStatistic(demodDev, tunerNum, data);
 					if(0 == ret) {
 						lock = data[0]&0x10 ;  //# check lock bit
-						if(lock) ::Sleep(USUNPTV_SETSLOCK_WAIT) ;
+						if(lock) HRSleep(USUNPTV_SETSLOCK_WAIT) ;
 					}
 				}else {
 					if(ch.TSID>0)
@@ -221,35 +225,50 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 					if(0 == ret) { hasStream = TRUE; break; }
 					else if(0 > ret) fail++ ;
 				}
-				::Sleep( 40 );
+				HRSleep( 40 );
 			}
 			if(n>1&&hasStream)
-				::Sleep( 40 );
+				HRSleep( 40 );
 			if(fail&&n==1) return FALSE;
 		}
-	}else for(DWORD n=USUNPTV_SETTFREQ_TIMES;n;n--) {
+	}else if(doSetFreq) for(DWORD n=USUNPTV_SETTFREQ_TIMES;n;n--) {
 		unsigned fail=0 ;
 		if( mxl136_setFreq(tunerDev[0], ch.Freq) ) fail++ ;
-		::Sleep( 30 );
+		HRSleep( 30 );
 		if( !fail && tc90522_resetDemod(demodDev, tunerNum ) ) fail++ ;
-		::Sleep( 50 );
+		HRSleep( 50 );
 		if(fail&&n==1) return FALSE;
 	}
 
-	if(hasStream) {
+	if(hasStream && doSetTSID) {
 		hasStream=FALSE;
 		for(DWORD e=0,s=Elapsed();USUNPTV_CHANNEL_WAIT>e;e=Elapsed(s)) {
 			unsigned statData[4];
-			::Sleep( 40 );
+			HRSleep( 40 );
 			if( tc90522_readStatistic(demodDev, tunerNum, statData) ) continue;
 			if( statData[0] & 0x10 ) { hasStream=TRUE; break; }
 		}
 	}
 
+	return hasStream ;
+}
+
+
+const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
+{
+	BOOL hasStream = TRUE;
+
+	CHANNEL ch = GetChannel(dwSpace,dwChannel) ;
+
+	//# change channel
+	m_hasStream=FALSE ;
+	FifoStop() ;
+
+	hasStream = select_ch(ch) ;
+
 	//# set variables
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
-	m_selectedTuner = tunerNum;
 	m_chCur = ch ;
 	m_hasStream = hasStream ;
 
@@ -279,6 +298,101 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
     LOADDW(USUNPTV_LOCK_ON_SIGNAL);
 	LOADDW(USUNPTV_FASTSCAN);
 	#undef LOADDW
+}
+
+  // IBonTransponder
+
+const BOOL CBonTuner::TransponderSelect(const DWORD dwSpace, const DWORD dwTransponder)
+{
+  if(!IsTunerOpening()) return FALSE;
+
+  int idx = transponder_index_of(dwSpace, dwTransponder) ;
+  if(idx<0) return FALSE ;
+
+  BOOL res = select_ch(m_Transponders[idx], TRUE, FALSE) ;
+
+  if(res) {
+    m_dwCurSpace = dwSpace;
+    m_dwCurChannel = dwTransponder | TRANSPONDER_CHMASK ;
+    m_chCur = m_Transponders[idx] ;
+    m_hasStream = FALSE; // TransponderSetCurID ‚Í‚Ü‚¾s‚Á‚Ä‚¢‚È‚¢‚Ì‚Å
+  }
+
+  return res ;
+}
+
+const BOOL CBonTuner::TransponderGetIDList(LPDWORD lpIDList, LPDWORD lpdwNumID)
+{
+  if(!IsTunerOpening()) return FALSE;
+  if(m_chCur.Band!=BAND_BS&&m_chCur.Band!=BAND_ND) return FALSE;
+
+  const DWORD numId = 8 ;
+
+  if(lpdwNumID==NULL) {
+    return FALSE ;
+  }else if(lpIDList==NULL) {
+    *lpdwNumID = numId ;
+    return TRUE ;
+  }
+
+  uint8_t tmcc[44] ;
+  if(tc90522_readTMCC(demodDev, 1, tmcc)) return FALSE;
+
+  DWORD num = min(8,*lpdwNumID) ;
+  uint8_t *p = tmcc + 28 ;
+  for(DWORD i=0;i<num;i++) {
+    DWORD id = *p++ ; id<<=8 ; id |= *p++ ;
+	if(id==0||id==0xffff) id = 0xFFFFFFFF ;
+	lpIDList[i] = id ;
+  }
+  *lpdwNumID = num ;
+
+  return TRUE ;
+}
+
+const BOOL CBonTuner::TransponderSetCurID(const DWORD dwID)
+{
+  if(!IsTunerOpening()) return FALSE;
+  if(m_chCur.Band!=BAND_BS&&m_chCur.Band!=BAND_ND) return FALSE;
+
+  //# change channel
+  m_hasStream=FALSE ;
+  FifoStop() ;
+
+  CHANNEL ch = m_chCur ;
+  ch.TSID = (WORD) (dwID&0xFFFF) ;
+  BOOL res = select_ch(ch, FALSE, TRUE) ;
+
+  if(res) {
+    m_chCur = ch ;
+    m_hasStream = TRUE ;
+    FifoStart() ;
+  }
+
+  PurgeTsStream();
+
+  return res ;
+}
+
+const BOOL CBonTuner::TransponderGetCurID(LPDWORD lpdwID)
+{
+  if(!IsTunerOpening()) return FALSE;
+  if(m_chCur.Band!=BAND_BS&&m_chCur.Band!=BAND_ND) return FALSE;
+
+  if(!m_hasStream) {
+    *lpdwID=0xFFFFFFFF;
+    return TRUE;
+  }
+
+  uint8_t tmcc[44] ;
+  if(tc90522_readTMCC(demodDev, 1, tmcc)) return FALSE;
+
+  uint8_t *p = tmcc + 2 ;
+  DWORD id = *p++ ; id<<=8 ; id |= *p++ ;
+  if(id==0||id==0xffff) id = 0xFFFFFFFF ;
+  *lpdwID = id ;
+
+  return TRUE;
 }
 
 } // End of namespace uSUNpTV

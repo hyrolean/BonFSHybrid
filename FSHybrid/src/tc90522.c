@@ -449,8 +449,8 @@ int tc90522_readTMCC(void * const state, const unsigned devnum, void* const pDat
 	}
 	if(devnum & 1) {  //# sate
 		ptr[0] = 0;
-		if(( ret = readReg(dev, 0xe6, &ptr[2] ) ))  goto err1;
-		if(( ret = readReg(dev, 0xe7, &ptr[3] ) ))  goto err1;
+		if(( ret = readReg(dev, 0xe6, &ptr[2] ) ))  goto err1; //# tsido - hi
+		if(( ret = readReg(dev, 0xe7, &ptr[3] ) ))  goto err1; //# tsido - lo
 		if(( ret = readReg(dev, 0xe8, &utmp ) ))  goto err1;
 		lval[0] = (utmp >> 4) & 0x7;
 		lval[1] = utmp & 0x7;
@@ -486,6 +486,12 @@ int tc90522_readTMCC(void * const state, const unsigned devnum, void* const pDat
 				ptr[1] = 6;
 				ptr[2] = 5;
 			}
+		}
+		ptr+=4 ; //# offset:28
+		//# tsid0 - tsid7
+		for( j=0; j<8; j++ ) {
+			if(( ret = readReg(dev, 0xce + (j << 1), ptr++ ) ))  goto err1; //# tsid# hi
+			if(( ret = readReg(dev, 0xcf + (j << 1), ptr++ ) ))  goto err1; //# tsid# lo
 		}
 	}else{  //# terra
 		uint8_t txmode;

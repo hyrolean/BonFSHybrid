@@ -483,6 +483,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\HRTimer.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\HRTimer.h"
+				>
+			</File>
+			<File
 				RelativePath=".\stdafx.cpp"
 				>
 				<FileConfiguration

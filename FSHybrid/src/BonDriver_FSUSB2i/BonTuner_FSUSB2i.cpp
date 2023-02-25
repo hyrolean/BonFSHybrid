@@ -137,7 +137,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	//# set variables
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
-	::Sleep( 80 );
+	HRSleep( 80 );
 
 	FifoStart();
 
@@ -148,7 +148,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	uint8_t statics[10];
 	BOOL locked = FALSE ;
 	for(DWORD e=0,s=Elapsed();FSUSB2I_CHANNEL_WAIT>e;e=Elapsed(s)) {
-		::Sleep( 40 );
+		HRSleep( 40 );
 		if(it9175_readStatistic(pDev, statics)==0) {
 			if((statics[0]&3)==3) { locked =  TRUE ; break ; }
 		}

@@ -65,7 +65,7 @@ const BOOL CBonTuner::TryOpenTuner()
 		usbDev->initDevice2();
 
 		DWORD dwStart = PastSleep();
-		::Sleep(80);
+		HRSleep(80);
 		if(usbDev->getDeviceID() == 2) {
 			pDev = new Ktv2Device(usbDev);
 		}else{
@@ -173,7 +173,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	// Channel•ÏX
 
 	FifoStop();
-	::Sleep(FSUSB2N_INTERIM_WAIT);
+	HRSleep(FSUSB2N_INTERIM_WAIT);
 
 	const bool do_locking = FSUSB2N_LOCK_ON_SIGNAL && m_USBEP.dev && m_USBEP.lockunlockFunc ;
 
@@ -182,16 +182,16 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 
 	for(DWORD i=FSUSB2N_SETFREQ_TIMES;i;i--) {
 		pDev->SetFrequency(dwFreq);
-		::Sleep(FSUSB2N_INTERIM_WAIT);
+		HRSleep(FSUSB2N_INTERIM_WAIT);
 	}
 	for(DWORD i=FSUSB2N_RESETDEMOD_TIMES;i;i--) {
 		pDev->ResetDeMod();
-		::Sleep(FSUSB2N_INTERIM_WAIT);
+		HRSleep(FSUSB2N_INTERIM_WAIT);
 	}
 
 	BOOL locked = FALSE ;
 	for(DWORD e=0,s=Elapsed();FSUSB2N_CHANNEL_WAIT>e;e=Elapsed(s)) {
-		::Sleep(40);
+		HRSleep(40);
 		if(pDev->DeMod_GetSequenceState() < 6)
 			continue;
 		locked=TRUE;
@@ -202,7 +202,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 		m_USBEP.lockunlockFunc(m_USBEP.dev,0);
 
 	FifoStart();
-	::Sleep(FSUSB2N_INTERIM_WAIT);
+	HRSleep(FSUSB2N_INTERIM_WAIT);
 
 	PurgeTsStream();
 

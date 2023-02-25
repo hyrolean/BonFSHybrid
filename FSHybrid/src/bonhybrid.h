@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 #include "pryutil.h"
-#include "IBonDriver2.h"
+#include "IBonTransponder.h"
 
 extern "C" {
 #include "tsbuff.h"
@@ -26,7 +26,7 @@ public:
 	virtual std::wstring ReadString(const std::wstring name,const std::wstring defStr=L"") const =0 ;
 };
 
-class CBonFSHybrid : public IBonDriver2
+class CBonFSHybrid : public IBonDriver2Transponder
 {
 public:
 	// BAND
@@ -65,7 +65,8 @@ protected:
 	void BuildTChannels() ;
 	void BuildSChannels() ;
 	void BuildAuxChannels() ;
-	void ArrangeChannels() ;
+	bool ArrangeChannels(CHANNELS &channels) ;
+	void RebuildChannels() ;
 	CHANNEL *GetUserChannel(DWORD dwSpace, DWORD dwChannel);
 	CHANNEL GetChannel(DWORD dwSpace, DWORD dwChannel);
 	// FIFO
@@ -109,17 +110,23 @@ public: // inherited
 	virtual LPCTSTR EnumTuningSpace(const DWORD dwSpace);
 	virtual LPCTSTR EnumChannelName(const DWORD dwSpace, const DWORD dwChannel);
 	virtual const BOOL SetChannel(const DWORD dwSpace, const DWORD dwChannel) {return FALSE;}
-
+	// IBonTransponder
+	virtual LPCTSTR TransponderEnumerate(const DWORD dwSpace, const DWORD dwTransponder) ;
+	virtual const BOOL TransponderSelect(const DWORD dwSpace, const DWORD dwTransponder) {return FALSE;}
+	virtual const BOOL TransponderGetIDList(LPDWORD lpIDList, LPDWORD lpdwNumID) {return FALSE;}
+	virtual const BOOL TransponderSetCurID(const DWORD dwID) {return FALSE;}
+	virtual const BOOL TransponderGetCurID(LPDWORD lpdwID) {return FALSE;}
 protected:
 	CBonFSHybrid(bool hasSatellite=false);
 	virtual ~CBonFSHybrid();
 
 protected:
 	// User Channels
-	CHANNELS m_UserChannels ;
+	CHANNELS m_UserChannels, m_Transponders ;
 	SPACEINDICES m_UserSpaceIndices;
 	SPACENAMES m_SpaceArrangement, m_InvisibleSpaces ;
 	bool m_hasSatellite ;
+	int transponder_index_of(DWORD dwSpace, DWORD dwTransponder) const ;
 	// tsthread
 	tsthread_ptr tsthr;
 	// FIFO

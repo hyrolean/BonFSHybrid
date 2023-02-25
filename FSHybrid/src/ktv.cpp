@@ -7,7 +7,7 @@
 
 inline void miliWait( int s )
 {
-	Sleep( s );
+	HRSleep( s, 0 );
 }
 
 unsigned KtvDevice::UserSettings = 0x7;

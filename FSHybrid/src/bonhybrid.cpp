@@ -74,6 +74,9 @@ DWORD TUNER_RETRY_DURATION = 3000 ;  // チューナーのオープン最大再試行時間
 BOOL DEVICE_ID_ROTATION = FALSE ;          // IDを循環参照させるかどうか
 BOOL DEVICE_ID_ROTATION_VOLATILE = FALSE ; // 揮発性レジストリに書くかどうか
 
+// 高精度割込みタイマーを使用するかどうか
+BOOL HIGH_PRECISE_INTERRUPT = FALSE;
+
 }
 
 // Instance
@@ -186,7 +189,7 @@ string CBonFSHybrid::ModuleFileName()
 //---------------------------------------------------------------------------
 bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev)
 {
-	bool result = false, breath = true ;
+	bool result = false ;
 	DWORD counter = 0;
 	hDev=hUsbDev=NULL;
 	int user_idx = UserDecidedDeviceIdx();
@@ -204,10 +207,10 @@ bool CBonFSHybrid::FindDevice(const GUID &drvGUID, HANDLE &hDev, HANDLE &hUsbDev
 	do {
 		int idx = user_idx < 0 ? rot_idx : user_idx ;
 		if(hDev||hUsbDev) {
-			Sleep(50);
+			HRSleep(50);
 			FreeDevice(hDev,hUsbDev);
 		}
-		if(counter>0) Sleep(1000) ; //# take a breath before retrying...
+		if(counter>0) HRSleep(1000) ; //# take a breath before retrying...
 		if((hDev = usbdevfile_alloc(&idx,&drvGUID) ) == NULL) {
 			if(user_idx<0&&rot_idx>=0) {
 				if(rot_idx!=0) rot_idx^=rot_idx;
@@ -333,6 +336,7 @@ void CBonFSHybrid::LoadUserChannels()
 	if (!channels.empty() && !indices.empty()) {
 		m_UserChannels.swap(channels) ;
 		m_UserSpaceIndices.swap(indices) ;
+		m_Transponders.swap(CHANNELS());
 	}
 
 	fclose(st) ;
@@ -358,6 +362,8 @@ void CBonFSHybrid::BuildTChannels()
 			m_UserChannels.push_back(CHANNEL(L"CATV",BAND_VU,i+100,L"C"+itows(i)+L"ch"));
 		}
 	}
+
+	copy(m_UserChannels.begin(), m_UserChannels.end(), back_inserter(m_Transponders)) ;
 }
 //---------------------------------------------------------------------------
 void CBonFSHybrid::BuildSChannels()
@@ -378,6 +384,10 @@ void CBonFSHybrid::BuildSChannels()
 			for(int i=1;i<=23;i+=2)
 				m_UserChannels.push_back(CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i),0));
 		}
+		for(int i=1;	i <= 23;	i+=2)
+		for(int j=0;	j<max<int>(DEFSPACE_BS_STREAMS,1);	j++)
+			m_Transponders.push_back(
+				CHANNEL(L"BS",BAND_BS,i,L"BS"+itows(i))) ;
 	}
 	if(DEFSPACE_CS110) {
 		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
@@ -395,6 +405,10 @@ void CBonFSHybrid::BuildSChannels()
 			for(int i=2;i<=24;i+=2)
 				m_UserChannels.push_back(CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i),0));
 		}
+		for(int i=2;	i <= 24;	i+=2)
+		for(int j=0;	j<max<int>(DEFSPACE_CS110_STREAMS,1);	j++)
+			m_Transponders.push_back(
+				CHANNEL(L"CS110",BAND_ND,i,L"ND"+itows(i))) ;
 	}
 }
 //---------------------------------------------------------------------------
@@ -426,44 +440,55 @@ void CBonFSHybrid::BuildAuxChannels()
 	if(!channels.empty()) {
 		m_UserSpaceIndices.push_back(m_UserChannels.size()) ;
 		copy(channels.begin(),channels.end(),back_inserter(m_UserChannels)) ;
+		copy(channels.begin(),channels.end(),back_inserter(m_Transponders)) ;
 	}
 }
 //---------------------------------------------------------------------------
-void CBonFSHybrid::ArrangeChannels()
+
+  bool CBonFSHybrid::ArrangeChannels(CHANNELS &channels) {
+    struct space_finder : public std::unary_function<CHANNEL, bool> {
+      std::wstring space ;
+      space_finder(std::wstring space_) {
+        space = space_ ;
+      }
+      bool operator ()(const CHANNEL &ch) const {
+        return space == ch.Space;
+      }
+    };
+    if (!m_InvisibleSpaces.empty() || !m_SpaceArrangement.empty()) {
+      CHANNELS newChannels ;
+      //CHANNELS oldChannels(channels) ;
+      CHANNELS &oldChannels = channels ;
+      CHANNELS::iterator beg = oldChannels.begin() ;
+      CHANNELS::iterator end = oldChannels.end() ;
+      for (CHANNELS::size_type i = 0; i < m_InvisibleSpaces.size(); i++) {
+        end = remove_if(beg, end, space_finder(m_InvisibleSpaces[i]));
+      }
+      for (CHANNELS::size_type i = 0; i < m_SpaceArrangement.size(); i++) {
+        space_finder finder(m_SpaceArrangement[i]) ;
+        remove_copy_if(beg, end, back_inserter(newChannels), not1(finder)) ;
+        end = remove_if(beg, end, finder) ;
+      }
+      copy(beg, end, back_inserter(newChannels)) ;
+      channels.swap(newChannels) ;
+	  return true ;
+    }
+	return false ;
+  }
+
+void CBonFSHybrid::RebuildChannels()
 {
-	struct space_finder : public std::unary_function<CHANNEL, bool> {
-		std::wstring space ;
-		space_finder(std::wstring space_) {
-			space = space_ ;
-		}
-		bool operator ()(const CHANNEL &ch) const {
-			return space == ch.Space;
-		}
-	};
-	if (!m_InvisibleSpaces.empty() || !m_SpaceArrangement.empty()) {
-		CHANNELS newChannels ;
-		//CHANNELS oldChannels(m_UserChannels) ;
-		CHANNELS &oldChannels = m_UserChannels ;
-		CHANNELS::iterator beg = oldChannels.begin() ;
-		CHANNELS::iterator end = oldChannels.end() ;
-		for (CHANNELS::size_type i = 0; i < m_InvisibleSpaces.size(); i++) {
-			end = remove_if(beg, end, space_finder(m_InvisibleSpaces[i]));
-		}
-		for (CHANNELS::size_type i = 0; i < m_SpaceArrangement.size(); i++) {
-			space_finder finder(m_SpaceArrangement[i]) ;
-			remove_copy_if(beg, end, back_inserter(newChannels), not1(finder)) ;
-			end = remove_if(beg, end, finder) ;
-		}
-		copy(beg, end, back_inserter(newChannels)) ;
+	if(ArrangeChannels(m_UserChannels)) {
+		if(!m_Transponders.empty())
+			ArrangeChannels(m_Transponders);
 		SPACEINDICES newSpaceIndices ;
 		wstring space = L"" ;
-		for (CHANNELS::size_type i = 0;i < newChannels.size();i++) {
-			if (newChannels[i].Space != space) {
-				space = newChannels[i].Space ;
+		for (CHANNELS::size_type i = 0;i < m_UserChannels.size();i++) {
+			if (m_UserChannels[i].Space != space) {
+				space = m_UserChannels[i].Space ;
 				newSpaceIndices.push_back(size_t(i)) ;
 			}
 		}
-		m_UserChannels.swap(newChannels) ;
 		m_UserSpaceIndices.swap(newSpaceIndices) ;
 	}
 }
@@ -691,7 +716,8 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADDW(TUNER_RETRY_DURATION);
 	LOADDW(DEVICE_ID_ROTATION);
-    LOADDW(DEVICE_ID_ROTATION_VOLATILE);
+	LOADDW(DEVICE_ID_ROTATION_VOLATILE);
+	LOADDW(HIGH_PRECISE_INTERRUPT);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
 	LOADDW(TSTHREAD_DUPLEX);
@@ -724,7 +750,7 @@ void CBonFSHybrid::Initialize()
 	if(m_hasSatellite)
 		BuildSChannels();
 	LoadUserChannels();
-	ArrangeChannels();
+	RebuildChannels();
 }
 //---------------------------------------------------------------------------
 void CBonFSHybrid::InitConstants()
@@ -748,6 +774,7 @@ void CBonFSHybrid::InitConstants()
 const BOOL CBonFSHybrid::OpenTuner()
 {
 	if(IsTunerOpening()) return FALSE;
+	SetHRTimerMode(HIGH_PRECISE_INTERRUPT);
 	BOOL r; DWORD e=Elapsed();
 	do { r=TryOpenTuner(); } while (!r && Elapsed(e)<TUNER_RETRY_DURATION);
 	return r ;
@@ -865,6 +892,14 @@ LPCTSTR CBonFSHybrid::EnumChannelName(const DWORD dwSpace, const DWORD dwChannel
 	return NULL ;
 }
 //---------------------------------------------------------------------------
+LPCTSTR CBonFSHybrid::TransponderEnumerate(const DWORD dwSpace, const DWORD dwTransponder)
+{
+	int idx = transponder_index_of(dwSpace, dwTransponder) ;
+	if(idx<0) return NULL ;
+
+	return m_Transponders[idx].Name.c_str();
+}
+//---------------------------------------------------------------------------
 void *CBonFSHybrid::OnTSFifoWriteBackBegin(int id, size_t max_size, void *arg)
 {
 	if(id<0||id>=TS_MaxNumIO) return NULL ;
@@ -907,6 +942,34 @@ void CBonFSHybrid::OnTSFifoPurge(void *arg)
 	exclusive_lock purgeLock(&tuner->m_coPurge);
 	ZeroMemory(tuner->m_mapCache,sizeof(tuner->m_mapCache));
 	tuner->m_fifo->Purge(true) ;
+}
+//---------------------------------------------------------------------------
+int CBonFSHybrid::transponder_index_of(DWORD dwSpace, DWORD dwTransponder) const
+{
+  if(m_Transponders.empty())
+    return -1 ; // transponder is not entried
+
+  if(m_UserSpaceIndices.size()<=dwSpace)
+    return -1 ; // space is over
+
+  size_t si = m_UserSpaceIndices[dwSpace] ;
+
+  if(m_Transponders[si].Band!=BAND_BS && m_Transponders[si].Band!=BAND_ND)
+    return -1 ; // transponder is not supported
+
+  size_t tp = 0 , i = si ;
+  for(DWORD hz=m_Transponders[si].Freq; tp<dwTransponder&&i<m_Transponders.size(); i++) {
+    if(m_Transponders[i].Space != m_Transponders[si].Space) break ;
+    if(m_Transponders[i].Freq != hz) {
+      hz = m_Transponders[i].Freq ; tp++;
+      if(tp==dwTransponder) break;
+    }
+  }
+
+  if(tp!=dwTransponder)
+    return -1 ; // transponder is not found
+
+  return (int) i ;
 }
 //---------------------------------------------------------------------------
 // CBonFSHybrid::CHANNEL

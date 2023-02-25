@@ -240,7 +240,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				SetEvent(ps->hTsRestart); //# restart to reactivate loops
 			}
 			LeaveCriticalSection(&ps->csTsExclusive);
-			WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
+			HRWaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT,0) ;
 			continue ;
 		}
 
@@ -255,7 +255,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				LeaveCriticalSection(&ps->csTsExclusive);
 			}else {
 				LeaveCriticalSection(&ps->csTsExclusive);
-				WaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT) ;
+				HRWaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT,0) ;
 			}
 			continue;
 		}else if(ps->loop_flags&loop_model) {
@@ -272,7 +272,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				events[0]=ps->hTsSubmit;
 				events[1]=ps->hTsRestart ;
 				//# wait for submitting buffer...
-				WaitForMultipleObjects(2, events , FALSE, TSTHREAD_SUBMIT_TIMEOUT );
+				HRWaitForMultipleObjects(2, events , FALSE, TSTHREAD_SUBMIT_TIMEOUT,0);
 				if(ps->total_submit<ps->io_limit)
 					continue ; //# less than io_limit, redo...
 			}
@@ -285,8 +285,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				int next_wait_index=-1 ;
 				{
 					int total_submit = ps->total_submit ;
-					int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
-					dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
+					int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS-1 ? total_submit : MAXIMUM_WAIT_OBJECTS-1 ;
+					DWORD usec1 = TSTHREAD_POLL_TIMEOUT*1000 / max_wait_count ;
+					dRet = HRWaitForSingleObject(ps->hTsEvents[ps->ri] ,0,usec1 );
+					if(dRet != WAIT_OBJECT_0)
+						dRet = HRWaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT,0 );
 					if (isCritical(ps)) continue;
 					if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
 						next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
@@ -316,7 +319,9 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 						DWORD bytesRead=pContext->bytesRead ;
 
+#ifdef STRICTLY_CHECK_EVENT_SIGNALS
 						if (duplex && !HasSignal(ps->hTsEvents[ps->ri])) break ;
+#endif
 
 						if (isCritical(ps)) break;
 						//if(!HasSignal(ps->hTsEvents[ps->ri])) break ;
@@ -340,11 +345,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 							warn_info(bytesRead, "reapURB overflow");
 							bytesRead = ps->buff_unitSize;
 						}
-						if(bRet) {
 #ifndef INCLUDE_ISOCH_XFER
-							if (ps->pUSB->endpoint & 0x100)
-								bytesRead = 0;
+						if (ps->pUSB->endpoint & 0x100)
+							bytesRead = 0;
 #endif
+						if(bRet) {
 #ifdef TS_IgnoreShortPacket
 							if (ps->xfer_size>bytesRead) {
 								//if(bytesRead>0)
@@ -354,18 +359,25 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 #endif
 						}else {
 							DBGOUT("reap: error (code=%d, size=%d)\n",dRet,bytesRead) ;
-							if(ERROR_IO_INCOMPLETE == dRet) { //# incomplete
+							if(ERROR_IO_INCOMPLETE == dRet) { //# ERR#996 io incomplete
 								break;  //# looking forward to the next time...
 							}
 							#if 1
-							if(ERROR_SEM_TIMEOUT == dRet) { //# timeout
-								break;  //# looking forward to the next time...
-							}
+							if(ERROR_SEM_TIMEOUT == dRet) { //# ERR#121 sem timeout
+								//# the data transfer process was reached timed out.
+								//# the throghput of the data transfer may be too low.
+								//# the getting data size will be less than packet size.
+								//# this error may be occurred on having huge packet size
+								//# and proceeding to transfer them on the poor USB device.
+								bRet=TRUE; //# the data is available and incompleted.
+							}else
 							#endif
-							//# failed
-							bytesRead = 0;
-							//ps->flags &= ~0x10;
-							warn_msg(dRet, "reapURB%u failed", ps->ri);
+							{
+								//# failed
+								bytesRead = 0;
+								//ps->flags &= ~0x10;
+								warn_msg(dRet, "reapURB%u failed", ps->ri);
+							}
 						}
 						if(pContext->index>=0) {
 							if (ps->pUSB->endpoint & 0x100) {
@@ -494,7 +506,11 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					if(++ps->ri>=ps->io_num) ps->ri^=ps->ri ;
 					if(ps->total_submit<=0) break;
 
-				}while(duplex || ps->ri!=next_wait_index);
+				}while(
+#ifdef STRICTLY_CHECK_EVENT_SIGNALS
+					duplex ||
+#endif
+					ps->ri!=next_wait_index);
 
 			}
 		}
@@ -529,7 +545,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 				events[0]=ps->hTsReap;
 				events[1]=ps->hTsRestart ;
 				//# wait for reaping buffer...
-				WaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT );
+				HRWaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT,0 );
 				if(ps->total_submit>=ps->io_num)
 					continue ; //# still full, redo...
 			}
@@ -577,7 +593,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 							events[0]=ps->hTsRead;
 							events[1]=ps->hTsRestart ;
 							//# wait for reading buffer...
-							dRet=WaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT );
+							dRet=HRWaitForMultipleObjects(2, events , FALSE, TSTHREAD_POLL_TIMEOUT,0 );
 							if(dRet==WAIT_TIMEOUT)
 							  DBGOUT("read: wait timeout\n") ;
 							else if(dRet==WAIT_OBJECT_0)
@@ -938,8 +954,8 @@ void tsthread_destroy(const tsthread_ptr ptr)
 	SetEvent(p->hTsSubmit);
 	for(i=0;i<2;i++) {
 		if(p->hThreads[i]!=INVALID_HANDLE_VALUE) {
-			if (WaitForSingleObject(p->hThreads[i],
-					USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT) != WAIT_OBJECT_0) {
+			if (HRWaitForSingleObject(p->hThreads[i],
+					USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0) != WAIT_OBJECT_0) {
 				warn_msg(GetLastError(), "tsthread_destroy timeout(%d)",i);
 				TerminateThread(p->hThreads[i], 0);
 			}
@@ -1033,7 +1049,7 @@ void tsthread_stop(const tsthread_ptr ptr)
 	LeaveCriticalSection(&ps->csTsExclusive) ;
 
 	if(!(ps->pUSB->endpoint & 0x100) ) { //# Bulk
-		WaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT);
+		HRWaitForSingleObject(ps->hTsStopped,USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT,0);
 	}
 }
 
@@ -1111,7 +1127,7 @@ int tsthread_wait(const tsthread_ptr tptr, const int timeout)
 		events[0]=ps->hTsRestart ;
 		events[1]=ps->hTsAvailable;
 		//# wait for buffer available...
-		dRet = WaitForMultipleObjects(2, events , FALSE, timeout);
+		dRet = HRWaitForMultipleObjects(2, events , FALSE, timeout,0);
 	}
 	if(WAIT_OBJECT_0+1 == dRet)  return 1;
 	else if(WAIT_OBJECT_0 == dRet || WAIT_TIMEOUT == dRet)  return 0;

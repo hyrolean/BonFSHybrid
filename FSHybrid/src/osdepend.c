@@ -12,7 +12,7 @@
 
 void miliWait(unsigned msec)
 {
-	Sleep(msec);
+	HRSleep(msec,0);
 }
 
 void* uHeapAlloc(size_t sz)
@@ -63,7 +63,7 @@ int uthread_mutex_lock(PMUTEX p)
 	EnterCriticalSection((CRITICAL_SECTION*)p) ;
 	return 0;
 #else
-	const DWORD dRet = WaitForSingleObject(p, 10000);
+	const DWORD dRet = HRWaitForSingleObject(p, 10000,0 );
 	if(WAIT_FAILED == dRet) return GetLastError();
 	return dRet;
 #endif

@@ -1,4 +1,4 @@
-BonDriver_uSUNpTV.dll MOD @ 2021/3/18
+BonDriver_uSUNpTV.dll MOD @ 2022/5/3
 
 ■オリジナル版から新たに追加した機能
 
@@ -31,6 +31,10 @@ BonDriver_uSUNpTV.dll MOD @ 2021/3/18
 
 
 ■更新履歴
+
+2021/3/18 からの変更点
+
+  ・IBonTransponderインターフェイスに対応
 
 2020/10/9 からの変更点
 

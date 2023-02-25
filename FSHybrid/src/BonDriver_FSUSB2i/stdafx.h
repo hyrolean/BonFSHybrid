@@ -7,3 +7,4 @@
 
 #include "../twindbg.h"
 
+#include "../HRTimer.h"

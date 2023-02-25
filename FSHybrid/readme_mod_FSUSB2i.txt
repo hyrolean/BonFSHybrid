@@ -1,4 +1,4 @@
-BonDriver_FSUSB2i.dll MOD @ 2021/3/18
+BonDriver_FSUSB2i.dll MOD @ 2022/5/3
 
 ■オリジナル版から新たに追加した機能
 
@@ -31,6 +31,10 @@ BonDriver_FSUSB2i.dll MOD @ 2021/3/18
 
 
 ■更新履歴
+
+2021/3/18 からの変更点
+
+  ・IBonTransponderインターフェイスに対応
 
 2020/5/22 からの変更点
 

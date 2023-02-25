@@ -308,24 +308,31 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 								mov edi, dp_
 								mov edx, dx_
 								mov eax, stride
-								xor ebx, ebx
 								cld
+								cmp bRet, 0
+								je lb3
+								xor ebx, ebx
 							lb1:
 								cmp dword ptr [esi+edx], 0
 								jne lb2
 								movsd
 								dec ecx
-								jz lb3
+								jz lb4
 								lea esi, [esi+eax-4]
 								jmp lb1
 							lb2:
 								mov dword ptr [edi], 0
-								add edi, 4
-								add esi, eax
+								lea edi, [edi+4]
+								lea esi, [esi+eax]
 								inc ebx
 								dec ecx
 								jnz lb1
+								jmp lb4
 							lb3:
+								mov ebx, ecx
+								xor eax, eax
+								rep stosd
+							lb4:
 								mov errorCnt, ebx
 							}
 							if(errorCnt>0)

@@ -103,6 +103,24 @@ string file_prefix_of(string filename)
 // acalci
 //---------------------------------------------------------------------------
 
+    template<typename T>
+    class integer_c_expression_const_table 
+    {
+    protected:
+      typedef map<string,T> const_map_t;
+      const_map_t const_map ;
+    public:
+      void clear() { const_map.clear(); }
+      void entry(const string &name, const T val) { const_map[name]=val; }
+      bool find(const string &name, T &val) const {
+        const_map_t::const_iterator pos = const_map.find(name);
+        if(pos==const_map.end()) return false;
+        val=pos->second ;
+        return true;
+      }
+    };
+
+    template<typename T>
     class integer_c_expression_string_calculator
     {
     protected:
@@ -129,44 +147,82 @@ string file_prefix_of(string filename)
       };
       struct node_t {
         token_t token ;
-        int val ;
+        T val ;
         struct node_t *next ;
         node_t(): token(tEND),val(0),next(NULL) {}
       };
       node_t *top ;
-      int def_val ;
+      T def_val ;
+      integer_c_expression_const_table<T> *const_table ;
       bool halfway ;
       const char *es ;
     protected:
+      static T strimmval(const char *s,char **endptr,int radix) {
+        #if 1
+        T val=0;
+        while(*s) {
+          int c = toupper(*s) ; T v ;
+          if(c>='0'&&c<='9'&&c-'0'<radix)
+            v = c-'0' ;
+          else if(radix>10&&c>='A'&&c<='Z'&&c-'A'<radix-10)
+            v = c-'A'+10 ;
+          else break ;
+          switch(radix) {
+            case 2:  val<<=1; break;
+            case 8:  val<<=3; break;
+            case 16: val<<=4; break;
+            default: val*=radix;
+          }
+          val += v ;
+          s++;
+        }
+        if(endptr) *endptr=const_cast<char*>(s) ;
+        return val ;
+        #else
+        if(sizeof(T)>sizeof(long))
+          return static_cast<T>(strtoull(s,endptr,radix)); // NG: @VS2008
+        return static_cast<T>(strtoul(s,endptr,radix));
+        #endif
+      }
+      static void skip_separator(const char *&s) {
+        while(*s==' '||*s=='\t'||*s=='\r'||*s=='\n') s++;
+      }
       static void skip_val_literal(const char *&s) {
         while(*s&&(isalnum(*s)||*s=='_')) s++;
       }
-      int __fastcall parse(node_t *backTK) {
+      T __fastcall parse(node_t *backTK) {
         node_t nextTK;
         backTK->next = &nextTK;
-        while(*es==' '||*es=='\t'||*es=='\r'||*es=='\n')
-          es++;
-        if(!*es||*es==';')
-          return calculate();
+        skip_separator(es);
         if(*es>='0'&&*es<='9') {
           char *e=NULL;
           nextTK.token=tVAL;
           if(es[0]=='0') {
             if(es[1]=='b'||es[1]=='B') // bin
-              nextTK.val=(int)strtol(es+=2,&e,2);
+              nextTK.val=strimmval(es+=2,&e,2);
             else if(es[1]=='x'||es[1]=='X') // hex
-              nextTK.val=(int)strtol(es+=2,&e,16);
+              nextTK.val=strimmval(es+=2,&e,16);
             else // oct
-              nextTK.val=(int)strtol(es++,&e,8);
-          }
-          else // dec
-            nextTK.val=(int)strtol(es++,&e,10);
+              nextTK.val=strimmval(es++,&e,8);
+          }else // dec
+            nextTK.val=strimmval(es++,&e,10);
           if(e) es=e;
+          switch(*es) { // binary units
+            case 'K': nextTK.val<<=10, es++; break ; // Ki
+            case 'M': nextTK.val<<=20, es++; break ; // Mi
+            case 'G': nextTK.val<<=30, es++; break ; // Gi
+            case 'T': nextTK.val<<=40, es++; break ; // Ti (over int)
+            case 'P': nextTK.val<<=50, es++; break ; // Pi
+            case 'E': 
+            case 'X': nextTK.val<<=60, es++; break ; // Ei
+            case 'Z': nextTK.val<<=70, es++; break ; // Zi (over __int64)
+            case 'Y': nextTK.val<<=80, es++; break ; // Yi 
+          }
           skip_val_literal(es) ;
         }
-        else if(!strncmp("**",es,2)) { nextTK.token=tFACT; es+=2; }
-        else if(!strncmp("<<",es,2)) { nextTK.token=tLSHIFT; es+=2; }
-        else if(!strncmp(">>",es,2)) { nextTK.token=tRSHIFT; es+=2; }
+        else if(!strncmp("**",es,2)) nextTK.token=tFACT,   es+=2; 
+        else if(!strncmp("<<",es,2)) nextTK.token=tLSHIFT, es+=2; 
+        else if(!strncmp(">>",es,2)) nextTK.token=tRSHIFT, es+=2; 
         else {
           switch(*es) {
             case '+': nextTK.token=tADD; break;
@@ -180,14 +236,26 @@ string file_prefix_of(string filename)
             case '|': nextTK.token=tOR;  break;
             case '(': nextTK.token=tLP;  break;
             case ')': nextTK.token=tRP;  break;
+            case ';': es++;
+            case '\0':
+              return calculate(); // terminal
             default:
-              return calculate();
+              if(const_table&&(isalpha(*es)||*es=='_')) { // constant
+                const char *e = es ;
+                skip_val_literal(e) ;
+                if(const_table->find(string(es,e-es),nextTK.val)) {
+                  nextTK.token=tVAL;
+                  es=e-1; 
+                  break;
+                }
+              }
+              return calculate(); // outside of c-expression literals
           }
           es++;
         }
-        return parse(&nextTK);
+        return parse(&nextTK); // parse the next token
       }
-      int calculate() {
+      T calculate() {
         int num=0;
         node_t *p=top->next;
         while(p&&p->token!=tEND) {
@@ -197,16 +265,16 @@ string file_prefix_of(string filename)
         return do_calculate(num,top->next);
       }
       static node_t* nest_node(node_t *p,int num) {
-        while(num>0) {p=p->next;num--;}
+        while(num>0) p=p->next, num--;
         return p;
       }
-      int __fastcall do_calculate(int &num,node_t *pos)
+      T __fastcall do_calculate(int &num,node_t *pos)
       {
       #define D1(a)  (p->token==(a))
       #define D2(a,b)  (D1(a)&&p->next->token==(b))
       #define D3(a,b,c) (D2(a,b)&&p->next->next->token==(c))
         if(!pos) {num=0; return def_val;}
-        //PRIOR100: ( )  <- parenthesses digest at first
+        //PRIOR100: ( )  <- digest parenthesses at first
         node_t *p=pos;
         for(int i=0;i<num-1;i++,p=p->next) {
           if(D1(tRP)) break ;
@@ -222,7 +290,7 @@ string file_prefix_of(string filename)
             }
           }
         }
-        //PRIOR(20-90): operators digest ( parenthesses excluded )
+        //PRIOR(20-90): digest operators ( parenthesses excluded )
         node_t *q;
         int n;
         //PRIOR20: + - ~ (single)
@@ -248,7 +316,7 @@ string file_prefix_of(string filename)
         for(int i=0;i<num-2;) {
           if(D1(tRP)) break ;
           if(D3(tVAL,tFACT,tVAL)) {
-            int val=p->val;
+            T val=p->val;
             q=p->next->next;
             if(q->val==0)
               p->val=1;
@@ -261,7 +329,7 @@ string file_prefix_of(string filename)
             p->next=q->next;
             num-=2;
           }
-          else {i++;p=p->next;}
+          else i++, p=p->next;
         }
         //PRIOR40: * / %
         p=pos;
@@ -303,7 +371,7 @@ string file_prefix_of(string filename)
             p->next=nest_node(p,3);
             num-=2;
           }
-          else {i++;p=p->next;}
+          else i++, p=p->next;
         }
         //PRIOR80: ^
         p=pos;
@@ -314,7 +382,7 @@ string file_prefix_of(string filename)
             p->next=nest_node(p,3);
             num-=2;
           }
-          else {i++;p=p->next;}
+          else i++, p=p->next;
         }
         //PRIOR90: |
         p=pos;
@@ -325,7 +393,7 @@ string file_prefix_of(string filename)
             p->next=nest_node(p,3);
             num-=2;
           }
-          else {i++;p=p->next;}
+          else i++, p=p->next;
         }
         //PRIOR10: a VAL token is finally existed at the head or not
         return pos&&pos->token==tVAL&&(halfway||num==1)? pos->val: def_val;
@@ -334,26 +402,34 @@ string file_prefix_of(string filename)
       #undef D3
       }
     public:
-      int execute(const char *expression_string, int default_value,
-             bool allow_indigestion) {
+      T execute(
+            const char *expression_string, T default_value,
+            const char **out_end_pointer=NULL,
+            integer_c_expression_const_table<T> *constant_var_table=NULL,
+            bool allow_indigestion=false ) {
         node_t sTK ;
         sTK.token = tSTART ;
         top = &sTK ;
         es = expression_string ;
         def_val = default_value ;
         halfway = allow_indigestion ;
-        return es ? parse(top) : def_val ;
+        const_table = constant_var_table ;
+        T ret = es ? parse(top) : def_val ;
+        if(out_end_pointer) *out_end_pointer = es ;
+        return ret ;
       }
     };
+    
 
 //----- acalci entity -----------------------------------------------
 /* Calculate the c-expression string and convert it to an integer. */
 /********************************************************************
 
-  int acalci(const char *s, int defVal, bool allowIndigest)
+  int acalci(const char *s, int defVal, const char **endPtr, bool allowIndigest)
 
     s: A c-expression string consisted of operators and terms.
     defVal: A returned value as default on being failed to calculate.
+    endPtr: An output value wherence end of c-expression literals on s.
     allowIndigest: Allow the indigestion of operators or not.
     [result]: A value as converted result of calculating s.
 
@@ -384,12 +460,34 @@ string file_prefix_of(string filename)
     Separator:: [SPACE][TAB(\t)][CR(\r)][LF(\n)]
 
 ********************************************************************/
-int acalci(const char *s, int defVal, bool allowIndigest)
-{
-  integer_c_expression_string_calculator calculator ;
-  return calculator.execute(s, defVal, allowIndigest) ;
-}
 
+  static integer_c_expression_const_table<int> acalci_const_table ;
+  static integer_c_expression_const_table<__int64> acalci64_const_table ;
+
+//-----
+int acalci(const char *s, int defVal, const char **endPtr, bool allowIndigest)
+{
+  integer_c_expression_string_calculator<int> calculator ;
+  return calculator.execute(s, defVal, endPtr, &acalci_const_table, allowIndigest) ;
+}
+//-----
+__int64 acalci64(const char *s, __int64 defVal, const char **endPtr, bool allowIndigest)
+{
+  integer_c_expression_string_calculator<__int64> calculator ;
+  return calculator.execute(s, defVal, endPtr, &acalci64_const_table, allowIndigest) ;
+}
+//-----
+void acalci_entry_const(const char *name, int val)
+{
+  if(!name) acalci_const_table.clear();
+  else acalci_const_table.entry(name, val);
+}
+//-----
+void acalci64_entry_const(const char *name, __int64 val)
+{
+  if(!name) acalci64_const_table.clear();
+  else acalci64_const_table.entry(name, val);
+}
 //===========================================================================
 // event_object
 //---------------------------------------------------------------------------

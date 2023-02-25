@@ -24,6 +24,9 @@
 
 #define ROUNDUP(n,w) (((n) + (w)) & ~(unsigned)(w))
 
+//# URB thread priority
+int TSTHREAD_PRIORITY = THREAD_PRIORITY_HIGHEST ;
+
 //# pipe policy settings
 BOOL USBPIPEPOLICY_RAW_IO = TRUE ;
 BOOL USBPIPEPOLICY_AUTO_CLEAR_STALL = TRUE ;
@@ -33,7 +36,6 @@ BOOL USBPIPEPOLICY_IGNORE_SHORT_PACKETS = FALSE ;
 BOOL USBPIPEPOLICY_SHORT_PACKET_TERMINATE = FALSE ;
 DWORD USBPIPEPOLICY_PIPE_TRANSFER_TIMEOUT = 5000UL ;
 BOOL USBPIPEPOLICY_RESET_PIPE_ON_RESUME = FALSE ;
-
 
 struct TSIO_CONTEXT {
 #ifdef INCLUDE_ISOCH_XFER
@@ -451,6 +453,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 			//# submit
 			if(ps->flags & 0x01) {
+				DWORD tick = GetTickCount() ;
 				void *buffer;
 				DWORD lnTransfered;
 				int num_empties=0,max_empties=TS_MaxNumIO;
@@ -624,6 +627,8 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					LeaveCriticalSection(&ps->csTsExclusive) ;
 					//# check submitting failed or not
 					if(/*dRet||*/pContext->index<0) break ;
+					if (GetTickCount()-tick>=TS_SubmitTimeout) 
+						break; //# submitting timeout
 					num_empties-=frames;
 				}
 				//if(dRet) break ;
@@ -780,7 +785,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 		uHeapFree( ps->buffer );
 		return -1;
 	} else {
-		SetThreadPriority( ps->hThread, THREAD_PRIORITY_HIGHEST );
+		SetThreadPriority( ps->hThread, TSTHREAD_PRIORITY );
 	}
 	*tptr = ps;
 

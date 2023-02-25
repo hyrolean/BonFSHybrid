@@ -79,6 +79,7 @@ protected:
 	static void OnTSFifoPurge(void *arg) ;
 
 protected:
+	virtual void InitConstants();
 	// Registry
 	virtual const TCHAR *RegName() { return NULL ; }
 	// Channels

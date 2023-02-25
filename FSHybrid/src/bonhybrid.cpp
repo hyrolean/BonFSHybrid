@@ -4,6 +4,7 @@
 
 #include <string>
 #include <iterator>
+#include <climits>
 #include "bonhybrid.h"
 #include "usbdevfile.h"
 //---------------------------------------------------------------------------
@@ -39,6 +40,7 @@ DWORD ASYNCTS_EMPTYLIMIT   = 11  ; // Empty limit at least 0.5M (47K*11) bytes
 const DWORD TSTHREADWAIT   = TS_PollTimeout ;
 const bool TSALLOCWAITING  = false ;
 const bool TSALLOCMODERATE = true ;
+int TSALLOC_PRIORITY = THREAD_PRIORITY_HIGHEST ;
 
 // Šù’è‚Ìƒ`ƒƒƒ“ƒlƒ‹î•ñ‚ÉVHF‚ðŠÜ‚ß‚é‚©‚Ç‚¤‚©
 BOOL DEFSPACE_VHF = FALSE ;
@@ -458,7 +460,7 @@ bool CBonFSHybrid::FifoInitialize(usb_endpoint_st *usbep)
 			DBGOUT("TSDATASIZE=%d\n",TSDATASIZE) ;
 			m_fifo = new CAsyncFifo(
 				ASYNCTS_QUEUENUM,ASYNCTS_QUEUEMAX,ASYNCTS_EMPTYBORDER,
-				TSDATASIZE,TSTHREADWAIT ) ;
+				TSDATASIZE,TSTHREADWAIT,TSALLOC_PRIORITY ) ;
 			if(m_fifo) {
 				m_fifo->SetEmptyLimit(ASYNCTS_EMPTYLIMIT) ;
 				m_fifo->SetModerateAllocating(TSALLOCMODERATE);
@@ -617,6 +619,7 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(ASYNCTS_QUEUEMAX);
 	LOADDW(ASYNCTS_EMPTYBORDER);
 	LOADDW(ASYNCTS_EMPTYLIMIT);
+	LOADDW(TSALLOC_PRIORITY);
 	LOADDW(DEFSPACE_VHF);
 	LOADDW(DEFSPACE_UHF);
 	LOADDW(DEFSPACE_CATV);
@@ -629,7 +632,8 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 	LOADDW(DEVICE_RETRY_TIMES);
 	LOADMSTRLIST(SpaceArrangement);
 	LOADMSTRLIST(InvisibleSpaces);
-	LOADDW(USBPIPEPOLICY_RAW_IO);
+	LOADDW(TSTHREAD_PRIORITY);
+ 	LOADDW(USBPIPEPOLICY_RAW_IO);
 	LOADDW(USBPIPEPOLICY_AUTO_CLEAR_STALL);
 	LOADDW(USBPIPEPOLICY_ALLOW_PARTIAL_READS);
 	LOADDW(USBPIPEPOLICY_AUTO_FLUSH);
@@ -643,6 +647,7 @@ void CBonFSHybrid::LoadValues(const IValueLoader *Loader)
 //---------------------------------------------------------------------------
 void CBonFSHybrid::Initialize()
 {
+	InitConstants();
 	LoadReg();
 	LoadIni();
 	BuildTChannels();
@@ -651,6 +656,33 @@ void CBonFSHybrid::Initialize()
 		BuildSChannels();
 	LoadUserChannels();
 	ArrangeChannels();
+}
+//---------------------------------------------------------------------------
+void CBonFSHybrid::InitConstants()
+{
+#define ACALCI_ENTRY_CONST(name) acalci_entry_const(#name,(int)name)
+	const int TS_OriginalPacketSize =  188*245 ;
+	acalci_entry_const();
+	ACALCI_ENTRY_CONST(NULL);
+	ACALCI_ENTRY_CONST(INT_MIN);
+	ACALCI_ENTRY_CONST(INT_MAX);
+	ACALCI_ENTRY_CONST(INFINITE);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_IDLE);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_LOWEST);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_BELOW_NORMAL);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_NORMAL);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_ABOVE_NORMAL);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_HIGHEST);
+	ACALCI_ENTRY_CONST(THREAD_PRIORITY_TIME_CRITICAL);
+	ACALCI_ENTRY_CONST(TS_MaxNumIO);
+	ACALCI_ENTRY_CONST(TS_BufPackets);
+	ACALCI_ENTRY_CONST(TS_PacketSize);
+	ACALCI_ENTRY_CONST(TS_OriginalPacketSize);
+	#ifdef INCLUDE_ISOCH_XFER
+	ACALCI_ENTRY_CONST(ISOCH_FrameSize);
+	ACALCI_ENTRY_CONST(ISOCH_PacketFrames);
+	#endif
+#undef ACALCI_ENTRY_CONST
 }
 //---------------------------------------------------------------------------
 const BOOL CBonFSHybrid::SetChannel(const BYTE bCh)

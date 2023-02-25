@@ -6,6 +6,9 @@
 #pragma once
 #include "types_u.h"
 
+//# URB thread priority
+extern int TSTHREAD_PRIORITY;
+
 //# pipe policy settings
 extern BOOL USBPIPEPOLICY_RAW_IO;
 extern BOOL USBPIPEPOLICY_AUTO_CLEAR_STALL;

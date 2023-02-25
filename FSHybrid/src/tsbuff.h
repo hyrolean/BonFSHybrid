@@ -42,9 +42,13 @@
 #define TS_MaxNumIO  24
 
 //# IO polling timeout (msec)
-#define TS_PollTimeout  100
+#define TS_PollTimeout  25
 
+//# IO submitting timeout (msec)
+#define TS_SubmitTimeout  50
 
+//# 2020-10-31
+//#   Added the definition "TS_SubmitTimeout".
 //# 2020-10-5
 //#   Added the definition "ISOCH_PacketFrames".
 //#   Added the definition "ISOCH_FrameSize" for the isochronous transfer.

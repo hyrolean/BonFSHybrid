@@ -208,6 +208,10 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 #endif
 		1 ;
 
+	EnterCriticalSection(&ps->csTsExclusive);
+	ps->loop_flags &= ~(loop_model<<2) ;
+	LeaveCriticalSection(&ps->csTsExclusive);
+
 	//# tell the loop is started
 	SetEvent(ps->hTsLoopIn);
 
@@ -278,26 +282,30 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			if(ps->total_submit>0) {
 
 				//# poll
-				int total_submit = ps->total_submit ;
 				int next_wait_index=-1 ;
-				int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
-				dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
-				if (isCritical(ps)) continue;
-				if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
-					int end_index=(ps->ri+total_submit)%ps->io_num ;
-					next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
+				{
+					int total_submit = ps->total_submit ;
+					int max_wait_count = total_submit<MAXIMUM_WAIT_OBJECTS ? total_submit : MAXIMUM_WAIT_OBJECTS ;
+					dRet = WaitForMultipleObjects(max_wait_count, &ps->hTsEvents[ps->ri] , FALSE, TSTHREAD_POLL_TIMEOUT );
+					if (isCritical(ps)) continue;
+					if(WAIT_OBJECT_0 <= dRet&&dRet < WAIT_OBJECT_0+max_wait_count) {
+						next_wait_index = ((dRet - WAIT_OBJECT_0)+1 + ps->ri)%ps->io_num ;
 #ifdef STRICTLY_CHECK_EVENT_SIGNALS
-					while(next_wait_index!=end_index) {
-						if(!HasSignal(ps->hTsEvents[next_wait_index]))
-							break ;
-						if (++next_wait_index >= ps->io_num)
-							next_wait_index ^= next_wait_index ;
-					}
+						if(!duplex) {
+							int end_index=(ps->ri+ps->total_submit)%ps->io_num ;
+							while( next_wait_index != end_index ) {
+								if(!HasSignal(ps->hTsEvents[next_wait_index]))
+									break ;
+								if (++next_wait_index >= ps->io_num)
+									next_wait_index ^= next_wait_index ;
+							}
+						}
 #endif
-				}else if(WAIT_TIMEOUT!=dRet) {
-					dRet = GetLastError();
-					warn_info(dRet,"poll failed");
-					break;
+					}else if(WAIT_TIMEOUT!=dRet) {
+						dRet = GetLastError();
+						warn_info(dRet,"poll failed");
+						break;
+					}
 				}
 
 				//# reap
@@ -307,6 +315,8 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					if(pContext->index>=0) {
 
 						DWORD bytesRead=pContext->bytesRead ;
+
+						if (duplex && !HasSignal(ps->hTsEvents[ps->ri])) break ;
 
 						if (isCritical(ps)) break;
 						//if(!HasSignal(ps->hTsEvents[ps->ri])) break ;
@@ -478,14 +488,13 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 							if(duplex) EnterCriticalSection(&ps->csTsExclusive) ;
 							ps->total_submit-- ;
 							if(duplex) LeaveCriticalSection(&ps->csTsExclusive) ;
-							total_submit-- ;
 							SetEvent(ps->hTsReap);
 						}
 					}
 					if(++ps->ri>=ps->io_num) ps->ri^=ps->ri ;
-					if(total_submit<=0) break ;
+					if(ps->total_submit<=0) break;
 
-				}while(ps->ri!=next_wait_index);
+				}while(duplex || ps->ri!=next_wait_index);
 
 			}
 		}
@@ -512,7 +521,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 		}
 
-        //# submitting loop model
+		//# submitting loop model
 		if( loop_model&2 ) {
 
 			if( duplex && ps->total_submit>=(ps->flags&0x10?ps->io_num:MIN_IOLIMIT) ) {
@@ -718,8 +727,10 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 	}
 
-	//# dispose
-	tsthread_purgeURB(ps);
+	EnterCriticalSection(&ps->csTsExclusive);
+	ps->loop_flags |= (loop_model<<4) ; //# end of loop
+	if((ps->loop_flags&(3<<4))==(3<<4)) tsthread_purgeURB(ps); //# dispose
+	LeaveCriticalSection(&ps->csTsExclusive);
 
 	return dRet ;
 }
@@ -750,10 +761,13 @@ int tsthread_create( tsthread_ptr* const tptr,
 
 	unsigned io_num = TSTHREAD_NUMIO ;
 	unsigned io_limit = TSTHREAD_SUBMIT_IOLIMIT ;
+	unsigned TS_BufPackets = 1 ;
 	if(io_limit<MIN_IOLIMIT) io_limit=MIN_IOLIMIT ;
 	if (io_num < io_limit) io_num = io_limit;
 	else if (io_num > TS_MaxNumIO) io_num = TS_MaxNumIO;
 	if(io_limit > io_num) io_limit = io_num ;
+	while(TS_BufPackets<io_num+TS_CalcDeadZone(TS_BufPackets))
+		TS_BufPackets<<=1 ;
 
 	{ //#
 		const BOOL tsfifo_exists = ptsfifo ? TRUE : FALSE ;
@@ -769,7 +783,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 #ifdef INCLUDE_ISOCH_XFER
 			pusbep->endpoint & 0x100 ? ISOCH_PacketFrames*TS_BufPackets :
 #endif
-			TS_CalcBufSize(xferSize)/unitSize ;
+			TS_CalcBufSize(xferSize,TS_BufPackets)/unitSize ;
 		const unsigned buffSize = wback_exists ? 0 : unitSize*unitNum ;
 		const unsigned buffer_size = wback_exists ? 0 : ROUNDUP( buffSize, 0xF );
 		const unsigned actlen_size = wback_exists ? 0 : sizeof( int ) * unitNum;
@@ -889,9 +903,12 @@ int tsthread_create( tsthread_ptr* const tptr,
 
 	SetEvent(ps->hTsRestart);
 
+	ps->loop_flags = 0 ;
 	ps->hThreads[0]=ps->hThreads[1]=INVALID_HANDLE_VALUE;
-    for(i=0;i<(TSTHREAD_DUPLEX?2:1);i++) {
-		ps->loop_flags = TSTHREAD_DUPLEX ? 1<<(2+i)/*duplex*/: 3<<2/*simplex*/;
+	for(i=0;i<(TSTHREAD_DUPLEX?2:1);i++) {
+		EnterCriticalSection(&ps->csTsExclusive);
+		ps->loop_flags |= TSTHREAD_DUPLEX ? 1<<(2+i)/*duplex*/: 3<<2/*simplex*/;
+		LeaveCriticalSection(&ps->csTsExclusive);
 		ResetEvent(ps->hTsLoopIn);
 		ps->hThreads[i] = ( HANDLE ) _beginthreadex( NULL, 0, tsthread, ps, 0, NULL );
 		if ( INVALID_HANDLE_VALUE == ps->hThreads[i] ) {
@@ -902,7 +919,7 @@ int tsthread_create( tsthread_ptr* const tptr,
 			if(TSTHREAD_DUPLEX) WaitForSingleObject(ps->hTsLoopIn,INFINITE);
 		}
 	}
-    
+
 	*tptr = ps;
 
 	return result ;

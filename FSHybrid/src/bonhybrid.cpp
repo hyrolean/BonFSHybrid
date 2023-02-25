@@ -678,7 +678,7 @@ void CBonFSHybrid::InitConstants()
 		}while(0)
 	const int TS_LegacyPacketSize =  188*245 ;
 	ACALCI_ENTRY_CONST(TS_MaxNumIO);
-	ACALCI_ENTRY_CONST(TS_BufPackets);
+	//ACALCI_ENTRY_CONST(TS_BufPackets);
 	ACALCI_ENTRY_CONST(TS_PacketSize);
 	ACALCI_ENTRY_CONST(TS_LegacyPacketSize);
 	#ifdef INCLUDE_ISOCH_XFER

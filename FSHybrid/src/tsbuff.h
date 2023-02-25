@@ -10,35 +10,35 @@
 #ifdef INCLUDE_ISOCH_XFER // Isochronous & Bulk hybrid
 
 //# Isochronous Frames per a Packet
-#define ISOCH_PacketFrames 48
+#define ISOCH_PacketFrames	48
 
 //# Isochronous Frame size (real packet size)
-#define ISOCH_FrameSize   (5*188)
+#define ISOCH_FrameSize		(5*188)
 
 //# TS Packet size (faked packet size)
-#define TS_PacketSize   (ISOCH_FrameSize*ISOCH_PacketFrames)
+#define TS_PacketSize	(ISOCH_FrameSize*ISOCH_PacketFrames)
 
 #else // Bulk only
 
 //# TS Packet size (real packet size)
-#define TS_PacketSize   47752 // org : 46060
+#define TS_PacketSize	47752 // org : 46060
 
 #endif
 
-//# TS Buffer packets
-#define TS_BufPackets	64
-
 //# TS Buffer size
-#define TS_CalcBufSize(PacketSize)	(ROUNDUP(PacketSize,0x1FF)*TS_BufPackets)
+#define TS_CalcBufSize(PacketSize,Packets)	(ROUNDUP(PacketSize,0x1FF)*Packets)
 #define TS_BufSize		TS_CalcBufSize(TS_PacketSize)
 
 //# number of keeping read only bytes before the buffer busy memory area
 #define TS_CalcDeadZone(BufSize)	(BufSize/4)
-#define TS_DeadZone  	TS_CalcDeadZone(TS_BufSize)
+#define TS_DeadZone		TS_CalcDeadZone(TS_BufSize)
 
 //# max number of submitted IO requests
-#define TS_MaxNumIO  64
+#define TS_MaxNumIO		256
 
+//# 2020-11-22
+//#   Removed the definition "TS_BufPackets".
+//#     It's auto calculated on tsthread_create() function of "tsthread.c".
 //# 2020-11-3
 //#   Moved the definition "ROUNDUP" from the source file "tsthread.c".
 //#   Removed the definition "TS_PollTimeout"

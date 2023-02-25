@@ -200,25 +200,40 @@ string file_prefix_of(string filename)
         while(num>0) {p=p->next;num--;}
         return p;
       }
-      int do_calculate(int num,node_t *pos)
+      int __fastcall do_calculate(int &num,node_t *pos)
       {
       #define D1(a)  (p->token==(a))
       #define D2(a,b)  (D1(a)&&p->next->token==(b))
       #define D3(a,b,c) (D2(a,b)&&p->next->next->token==(c))
-        node_t *p,*q;
+        node_t *p;
         int bk_num=0;
         if(pos) while(num>1) {
           if(bk_num==num) {
             // これ以上計算が進まないので、ここで中断する
-            if(pos->token==tVAL)
-              num=1; // VAL が検出できているので、結果おｋということにする
             break ;
           }
           bk_num=num;
+          //PRIOR100: ( )  ←先に計算して片付けておく
+          p=pos;
+          for(int i=0;i<num-1;i++,p=p->next) {
+            if(D1(tRP)) break ;
+            if(D1(tLP)) {
+              int n=num-(i+1),m=n;
+              do_calculate(n,p->next);
+              num -= m-n ;
+              if(num-i>=3&&D3(tLP,tVAL,tRP)) {
+                p->val= ( p->next->val );
+                p->token=tVAL;
+                p->next=nest_node(p,3);
+                num-=2;
+              }
+            }
+          }
           //PRIOR20: + - ~ (single)
-          p=pos ; q=NULL;
+          node_t *q=NULL; p=pos ; 
           for(int i=0;i<num-1;i++,q=p,p=p->next) {
-            if(q&&(q->token==tVAL||q->token==tRP)) // NG: 左辺値が存在
+            if(D1(tRP)) break ;
+            if(q&&q->token==tVAL) // NG: 左辺値が存在
               continue;
             else if(D2(tADD,tVAL)) {
               p->val= + p->next->val;
@@ -242,6 +257,7 @@ string file_prefix_of(string filename)
           //PRIOR30: **
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tFACT,tVAL)) {
               int val=p->val;
               q=p->next->next;
@@ -261,6 +277,7 @@ string file_prefix_of(string filename)
           //PRIOR40: * / %
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tMUL,tVAL)) {
               p->val=p->val * p->next->next->val;
               p->next=nest_node(p,3);
@@ -281,6 +298,7 @@ string file_prefix_of(string filename)
           //PRIOR50: + -
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tADD,tVAL)) {
               p->val=p->val + p->next->next->val;
               p->next=nest_node(p,3);
@@ -296,6 +314,7 @@ string file_prefix_of(string filename)
           //PRIOR60: << >>
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tLSHIFT,tVAL)) {
               p->val=p->val << p->next->next->val;
               p->next=nest_node(p,3);
@@ -311,6 +330,7 @@ string file_prefix_of(string filename)
           //PRIOR70: &
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tAND,tVAL)) {
               p->val=p->val & p->next->next->val;
               p->next=nest_node(p,3);
@@ -321,6 +341,7 @@ string file_prefix_of(string filename)
           //PRIOR80: ^
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tXOR,tVAL)) {
               p->val=p->val ^ p->next->next->val;
               p->next=nest_node(p,3);
@@ -331,6 +352,7 @@ string file_prefix_of(string filename)
           //PRIOR90: |
           p=pos;
           for(int i=0;i<num-2;) {
+            if(D1(tRP)) break ;
             if(D3(tVAL,tOR,tVAL)) {
               p->val=p->val | p->next->next->val;
               p->next=nest_node(p,3);
@@ -338,19 +360,9 @@ string file_prefix_of(string filename)
             }
             else {i++;p=p->next;}
           }
-          //PRIOR100: ( VAL )
-          p=pos;
-          for(int i=0;i<num-2;i++,p=p->next) {
-            if(D3(tLP,tVAL,tRP)) {
-              p->val= ( p->next->val );
-              p->token=tVAL;
-              p->next=nest_node(p,3);
-              num-=2;
-            }
-          }
         }
         //PRIOR10: VAL or not
-        return pos&&pos->token==tVAL&&num==1? pos->val: def_val;
+        return pos&&pos->token==tVAL/*&&num==1*/? pos->val: def_val;
       #undef D1
       #undef D2
       #undef D3
@@ -375,6 +387,7 @@ string file_prefix_of(string filename)
     s:計算式を書いた文字列。
     計算式と結合法則: (下方程、優先順位が低くなる。)
     ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+        ( )                         →
         + - ~ (単項)                ←
         ** (乗算)                   →
         * / %                       →
@@ -383,7 +396,6 @@ string file_prefix_of(string filename)
         &                           →
         ^                           →
         |                           →
-        ( )                         →
     ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
     式の意味はＣ言語で常時使っているものと同様。
     項には、整数のみ使用可能。変数は使用不可。
@@ -391,7 +403,7 @@ string file_prefix_of(string filename)
     ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
       0[bB][01]+            ニ進数
       [1-9][0-9]+           十進数
-      [0-7]+                八進数
+      0[0-7]+               八進数
       0[xX][0-9a-fA-F]+     十六進数
     ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
     セパレーター： スペース/タブ/キャリッジリターン/ニューラインコード

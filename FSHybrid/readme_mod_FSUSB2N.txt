@@ -26,7 +26,7 @@ BonDriver_FSUSB2N.dll MOD @ 2020/10/9
   ・Windows8.1以降で動作するアイソクロナス転送(無変更K0905の個体)に対応したプ
     ロジェクトファイル BonDriver_FSUSB2N_isoch.vcxproj を新たに追加
     (このモードで動作させる場合は、無変更K0905のEEPROMに書き直してください。
-	 ソリューションファイル FSUSB2N_isoch.sln から構築してください。)
+     ソリューションファイル FSUSB2N_isoch.sln から構築してください。)
 
 2020/5/22 からの変更点
 

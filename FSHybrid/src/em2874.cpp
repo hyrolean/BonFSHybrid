@@ -710,11 +710,13 @@ int EM2874Device::GetTsBuffIndex()
 
 #ifdef EM2874_USBEP
 
+extern "C" int TSCACHING_DROPNULLPACKETS ;
 int EM2874Device::USBEndPointStartStopFunc(void * const  dev, const int start)
 {
 	EM2874Device *this_ = static_cast<EM2874Device*>(dev) ;
 	if(start) {
-		this_->writeReg( EM2874_REG_TS_ENABLE, EM2874_TS1_CAPTURE_ENABLE | EM2874_TS1_NULL_DISCARD );
+		this_->writeReg( EM2874_REG_TS_ENABLE, EM2874_TS1_CAPTURE_ENABLE |
+			( TSCACHING_DROPNULLPACKETS ? EM2874_TS1_NULL_DISCARD : 0 ) );
 	}else {
 		this_->writeReg( EM2874_REG_TS_ENABLE, 0 );
 	}

@@ -1,4 +1,4 @@
-BonDriver_FSHybrid.dll MOD @ 2020/10/9
+BonDriver_FSHybrid.dll MOD @ 2020/10/12
 
 ■KEIAN/Digibest系3つの機能を同時に有するハイブリッド型BonDriver.dll
 
@@ -33,6 +33,11 @@ BonDriver_FSHybrid.dll MOD @ 2020/10/9
 
 
 ■更新履歴
+
+2020/10/9 からの変更点
+
+  ・iniファイルにNULLパケットをシャットアウトするかどうかを判断するためのフラグ
+    TSCACHING_DROPNULLPACKETS 項目を追加
 
 2020/6/20 からの変更点
 

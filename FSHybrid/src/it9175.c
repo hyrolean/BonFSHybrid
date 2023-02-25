@@ -371,6 +371,7 @@ static uint8_t getFreqNdiv(const uint32_t freq, uint8_t* const n_div)
 
 /* initialize tuner, demod, USB interface */
 extern int TSCACHING_BULKPACKETSIZE;
+extern int TSCACHING_DROPNULLPACKETS;
 static int it9175_tuner_init(struct state_st* const st)
 {
 	int ret;
@@ -501,8 +502,9 @@ static int it9175_tuner_init(struct state_st* const st)
 		if((ret = writeRegTable(st, init3_mtab, ARRAY_SIZE(init3_mtab)))) goto err1;
 	}
 	{//# frame size, packet size= 512 /4 = 128
-		const unsigned TS_FrameSize = (TSCACHING_BULKPACKETSIZE>0 ?
+		unsigned TS_FrameSize = (TSCACHING_BULKPACKETSIZE>0 ?
 			TSCACHING_BULKPACKETSIZE : TS_PacketSize) / 4;
+		if(TS_FrameSize>=65536) TS_FrameSize=65535;
 		rbuf[0] = TS_FrameSize & 0xFF;
 		rbuf[1] = (TS_FrameSize >> 8) & 0xFF;
 		if((ret = writeRegs(st, 0xdd88, rbuf, 2))) goto err1;
@@ -533,7 +535,7 @@ static int it9175_tuner_init(struct state_st* const st)
 		};
 		if((ret = writeRegTable(st, init4_mtab, ARRAY_SIZE(init4_mtab)))) goto err1;
 	}
-	{//# PID filter
+	if(TSCACHING_DROPNULLPACKETS){//# PID filter
 		rbuf[0] = 0xFF;  rbuf[1] = 0x1F;
 		if((ret = writeRegs(st, 0x80f996, rbuf, 2))) goto err1;
 		if((ret = writeReg(st, 0x80f995, 0))) goto err1;

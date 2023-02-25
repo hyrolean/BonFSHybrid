@@ -342,6 +342,7 @@ void em287x_attach(const em287x_state state, struct i2c_device_st* const  i2c_de
 	i2c_dev->i2c_comm = (void*)em287x_I2C;
 }
 
+extern int TSCACHING_DROPNULLPACKETS ;
 int em287x_startstopStream(const em287x_state state, const int start)
 {
 	int r;
@@ -351,7 +352,7 @@ int em287x_startstopStream(const em287x_state state, const int start)
 		r = readReg(s, 0x5f, &utmp);
 		if( r ) { warn_info(r,"failed");  return -5; }
 		if(utmp & 0x08) { warn_msg(0,"TS encrypt detected!"); }
-		utmp = (utmp & 0xF0) | 0x05;
+		utmp = (utmp & 0xF0) | 0x01 | (TSCACHING_DROPNULLPACKETS?0x04:0) ;
 		r = em287x_ctrl(s->fd, 0x785f, 1, &utmp, 0x1401);
 		if( r ) { warn_info(r,"failed");  return -6; }
 	}else{  //# stop

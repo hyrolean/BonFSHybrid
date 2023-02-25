@@ -36,8 +36,7 @@ BonDriver_uSUNpTV.dll MOD @ 2020/10/9
 
   ・Windows8.1以降で動作するアイソクロナス転送(無改造の個体)に対応したプロジェ
     クトファイル BonDriver_uSUNpTV_isoch.vcxproj を新たに追加
-	(ソリューションファイル uSUNpTV_isoch.sln から構築してください。)
-
+    (ソリューションファイル uSUNpTV_isoch.sln から構築してください。)
 
 2020/4/27 からの変更点
 

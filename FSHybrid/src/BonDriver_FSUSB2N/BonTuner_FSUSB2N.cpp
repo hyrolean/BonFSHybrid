@@ -9,6 +9,7 @@ namespace FSUSB2N {
 DWORD FSUSB2N_INTERIM_WAIT     = 20    ;
 DWORD FSUSB2N_SETFREQ_TIMES    = 2     ;
 DWORD FSUSB2N_RESETDEMOD_TIMES = 1     ;
+DWORD FSUSB2N_TUNIGSEQSTAT_LV  = 6     ;
 DWORD FSUSB2N_CHANNEL_WAIT     = 800   ;
 BOOL  FSUSB2N_LOCK_ON_SIGNAL   = TRUE  ;
 BOOL  FSUSB2N_FASTSCAN         = FALSE ;
@@ -189,13 +190,19 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 		HRSleep(FSUSB2N_INTERIM_WAIT);
 	}
 
-	BOOL locked = FALSE ;
-	for(DWORD e=0,s=Elapsed();FSUSB2N_CHANNEL_WAIT>e;e=Elapsed(s)) {
-		HRSleep(40);
-		if(pDev->DeMod_GetSequenceState() < 6)
-			continue;
-		locked=TRUE;
-		break;
+	BOOL tuned = FSUSB2N_TUNIGSEQSTAT_LV>0 ? FALSE : TRUE ;
+	if(!tuned) {
+		DBGOUT("FSUSB2N: Wait tuning... \n") ;
+		for(DWORD e=0,s=Elapsed();FSUSB2N_CHANNEL_WAIT>e;e=Elapsed(s)) {
+			HRSleep(40);
+			uint8_t statLv = pDev->DeMod_GetSequenceState() ;
+			DBGOUT("FSUSB2N: sequence stat lv = %d\n",statLv) ;
+			if(statLv < FSUSB2N_TUNIGSEQSTAT_LV)
+				continue;
+			tuned=TRUE;
+			break;
+		}
+		DBGOUT("FSUSB2N: Tuning done\n") ;
 	}
 
 	if(do_locking) //# unlock
@@ -211,7 +218,7 @@ const BOOL CBonTuner::SetChannel(const DWORD dwSpace, const DWORD dwChannel)
 	m_dwCurSpace = dwSpace;
 	m_dwCurChannel = dwChannel;
 
-	return FSUSB2N_FASTSCAN? locked: TRUE;
+	return FSUSB2N_FASTSCAN? tuned: TRUE;
 }
 
 const DWORD CBonTuner::GetCurSpace(void)
@@ -236,6 +243,7 @@ void CBonTuner::LoadValues(const IValueLoader *Loader)
 	LOADDW(FSUSB2N_INTERIM_WAIT);
 	LOADDW(FSUSB2N_SETFREQ_TIMES);
 	LOADDW(FSUSB2N_RESETDEMOD_TIMES);
+	LOADDW(FSUSB2N_TUNIGSEQSTAT_LV);
 	LOADDW(FSUSB2N_CHANNEL_WAIT);
 	LOADDW(FSUSB2N_LOCK_ON_SIGNAL);
 	LOADDW(FSUSB2N_FASTSCAN);

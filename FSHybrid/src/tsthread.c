@@ -267,7 +267,7 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 					tsthread_purgeURB(ps) ;
 					ResetEvent(ps->hTsRestart) ;
 					SetEvent(ps->hTsAvailable) ;
-				}else
+				}else if(loop_model&1)
 					wait = TRUE ;
 			}
 			LeaveCriticalSection(&ps->csTsExclusive);
@@ -278,7 +278,17 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 			EnterCriticalSection(&ps->csTsExclusive);
 			if(ps->flags & 0x01U) {
 				sig = HasSignal(ps->hTsRestart) ;
-				if(!sig) ps->loop_flags &= ~loop_model ; //# loop activate 1 -> 0
+				if(!sig){
+					if(ps->loop_flags&loop_model) {
+						ps->loop_flags &= ~loop_model ; //# loop activate 1 -> 0
+						if(!(ps->loop_flags&3))
+							SetEvent(ps->hTsAvailable) ;
+					}
+					if(ps->loop_flags&3) {
+						sig = TRUE ; //# stopped another thread exists yet - redone
+						HRWaitForSingleObject(ps->hTsAvailable, TSTHREAD_POLL_TIMEOUT,0) ;
+					}
+				}
 			}
 			LeaveCriticalSection(&ps->csTsExclusive);
 			if(sig) continue;
@@ -771,7 +781,10 @@ static unsigned int tsthread_bulkURB(struct tsthread_param* const ps)
 
 	EnterCriticalSection(&ps->csTsExclusive);
 	ps->loop_flags |= (loop_model<<4) ; //# end of loop
-	if((ps->loop_flags&(3<<4))==(3<<4)) tsthread_purgeURB(ps); //# dispose
+	if((ps->loop_flags&(3<<4))==(3<<4)) {
+		tsthread_purgeURB(ps); //# dispose
+		SetEvent(ps->hTsStopped);
+	}
 	LeaveCriticalSection(&ps->csTsExclusive);
 
 	return dRet ;
@@ -984,8 +997,8 @@ void tsthread_destroy(const tsthread_ptr ptr)
 	int i;
 	struct tsthread_param* const ps = ptr;
 
-	tsthread_stop(ptr);
 	ps->flags |= 0x02U;    //# canceled = T
+	tsthread_stop(ptr);
 	SetEvent(ps->hTsRead);
 	SetEvent(ps->hTsAvailable);
 	SetEvent(ps->hTsReap);
@@ -1067,12 +1080,15 @@ void tsthread_stop(const tsthread_ptr ptr)
 	EnterCriticalSection(&ps->csTsExclusive) ;
 	lockWinUsb(ps,1);
 
-	if(!(ps->pUSB->endpoint & 0x100) && stopped) { //# Bulk
-		WinUsb_AbortPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
-	}
+	if(stopped||(ps->flags&0x02U)) {
 
-	if(ps->pUSB->startstopFunc)
-		ps->pUSB->startstopFunc(ps->pUSB->dev, 0);
+		if(!(ps->pUSB->endpoint & 0x100)) { //# Bulk
+			WinUsb_AbortPipe(ps->pUSB->fd, ps->pUSB->endpoint & 0xFF);
+		}
+
+		if(ps->pUSB->startstopFunc)
+			ps->pUSB->startstopFunc(ps->pUSB->dev, 0);
+	}
 
 	lockWinUsb(ps,0);
 	LeaveCriticalSection(&ps->csTsExclusive) ;
@@ -1138,8 +1154,9 @@ int tsthread_readable(const tsthread_ptr tptr)
 		}
 	} while(j != ps->buff_pop);
 	ps->buff_pop = j<0 ? 0 : j ;
+	j = j<0 ? 0 : ps->actual_length[j] ;
 	LeaveCriticalSection(&ps->csTsExclusive) ;
-	return j<0 ? 0 : ps->actual_length[j];
+	return j ;
 }
 
 int tsthread_wait(const tsthread_ptr tptr, const int timeout)
